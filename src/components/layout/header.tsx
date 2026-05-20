@@ -1,59 +1,220 @@
 "use client";
 
 import * as React from "react";
-import { Bell, ChevronDown, Calendar, User } from "lucide-react";
+import { Bell, ChevronDown, Calendar, User, Settings, LogOut, Search } from "lucide-react";
 import { cn, formatIndonesianDate } from "@/lib/utils";
 import { useSidebar } from "./sidebar";
 
-export function Header() {
+interface HeaderProps {
+  title?: string;
+  subtitle?: string;
+  actions?: React.ReactNode;
+}
+
+export function Header({ title, subtitle, actions }: HeaderProps) {
   const { collapsed } = useSidebar();
-  const [currentDate] = React.useState(new Date());
+  const [mounted, setMounted] = React.useState(false);
+  const [showUserMenu, setShowUserMenu] = React.useState(false);
+  const [showNotifications, setShowNotifications] = React.useState(false);
+
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Static date to avoid hydration mismatch
+  const staticDate = "Kamis, 21-05-2026";
 
   return (
     <header
       className={cn(
-        "fixed right-0 top-0 z-20 flex h-[52px] items-center justify-between border-b border-[#E5E7EB] bg-white px-6 shadow-sm transition-all duration-300",
-        collapsed ? "lg:left-[64px]" : "lg:left-[240px]"
+        "fixed right-0 top-0 z-20 flex h-[60px] items-center justify-between border-b border-[#E5E7EB] bg-white px-6 shadow-sm transition-all duration-300",
+        collapsed ? "lg:left-[72px]" : "lg:left-[260px]"
       )}
     >
-      {/* Left side - Page title area (for breadcrumbs) */}
+      {/* Left side - Title */}
       <div className="flex items-center gap-4">
-        <h1 className="text-base font-semibold text-[#1A1A2E]">
-          {/* Page title will be set by each page */}
-        </h1>
+        <div>
+          {title && (
+            <h1 className="text-base font-semibold text-[#1A1A2E]">{title}</h1>
+          )}
+          {subtitle && (
+            <p className="text-xs text-[#6B7280]">{subtitle}</p>
+          )}
+        </div>
       </div>
 
       {/* Right side */}
       <div className="flex items-center gap-3">
+        {/* Search (hidden on small screens) */}
+        <div className="hidden xl:block">
+          <div className="relative group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#9CA3AF] group-focus-within:text-[#1A2B6B]" />
+            <input
+              type="text"
+              placeholder="Quick search..."
+              className="h-9 w-64 rounded-lg border border-[#E5E7EB] bg-[#FAFAFA] pl-10 pr-4 text-sm text-[#1A1A2E] placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#1A2B6B]/20 focus:border-[#1A2B6B] focus:bg-white transition-all"
+            />
+          </div>
+        </div>
+
         {/* Current Date */}
-        <div className="hidden items-center gap-2 rounded-[6px] border border-[#E5E7EB] bg-gray-50 px-3 py-1.5 sm:flex">
-          <Calendar className="h-3.5 w-3.5 text-[#6B7280]" />
+        <div className="hidden items-center gap-2 rounded-lg border border-[#E5E7EB] bg-[#FAFAFA] px-3.5 py-2 xl:flex">
+          <Calendar className="h-4 w-4 text-[#9CA3AF]" />
           <span className="text-xs font-medium text-[#6B7280]">
-            {formatIndonesianDate(currentDate)}
+            {mounted ? formatIndonesianDate(new Date()) : staticDate}
           </span>
-          <ChevronDown className="h-3.5 w-3.5 text-gray-400" />
         </div>
 
         {/* Notifications */}
-        <button className="relative flex h-8 w-8 items-center justify-center rounded-full border border-[#E5E7EB] hover:bg-gray-50">
-          <Bell className="h-4 w-4 text-[#6B7280]" />
-          <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#EF4444] text-[9px] font-bold text-white px-1">
-            3
-          </span>
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => {
+              setShowNotifications(!showNotifications);
+              setShowUserMenu(false);
+            }}
+            className="relative flex h-10 w-10 items-center justify-center rounded-lg border border-[#E5E7EB] bg-white hover:bg-[#FAFAFA] transition-colors"
+          >
+            <Bell className="h-5 w-5 text-[#6B7280]" />
+            <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#EF4444] text-[10px] font-bold text-white px-1 shadow-sm">
+              3
+            </span>
+          </button>
+
+          {/* Notifications Dropdown */}
+          {showNotifications && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setShowNotifications(false)}
+              />
+              <div className="absolute right-0 top-full mt-2 w-80 rounded-xl border border-[#E5E7EB] bg-white shadow-xl z-50 overflow-hidden">
+                <div className="px-4 py-3 border-b border-[#F3F4F6]">
+                  <h3 className="text-sm font-semibold text-[#1A1A2E]">Notifications</h3>
+                </div>
+                <div className="max-h-80 overflow-y-auto">
+                  <NotificationItem
+                    title="New Leave Request"
+                    message="Budi Santoso submitted a leave request"
+                    time="5 min ago"
+                    unread
+                  />
+                  <NotificationItem
+                    title="Overtime Approved"
+                    message="Your overtime request for yesterday was approved"
+                    time="1 hour ago"
+                    unread
+                  />
+                  <NotificationItem
+                    title="Performance Review"
+                    message="Performance appraisal deadline is approaching"
+                    time="2 hours ago"
+                  />
+                </div>
+                <div className="px-4 py-2.5 border-t border-[#F3F4F6] bg-[#FAFAFA]">
+                  <button className="w-full text-center text-xs font-medium text-[#1A2B6B] hover:underline">
+                    View all notifications
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
 
         {/* User Profile */}
-        <button className="flex items-center gap-2 rounded-[6px] border border-[#E5E7EB] px-2 py-1 hover:bg-gray-50">
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#1A2B6B] text-white text-xs font-semibold">
-            YA
-          </div>
-          <div className="hidden flex-col text-left sm:flex">
-            <span className="text-xs font-semibold text-[#1A1A2E] leading-none mb-0.5">Yoga Utama</span>
-            <span className="text-[10px] text-[#6B7280] leading-none">HR Admin</span>
-          </div>
-          <ChevronDown className="hidden h-3.5 w-3.5 text-gray-400 sm:block" />
-        </button>
+        <div className="relative">
+          <button
+            onClick={() => {
+              setShowUserMenu(!showUserMenu);
+              setShowNotifications(false);
+            }}
+            className="flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-2 py-1.5 hover:bg-[#FAFAFA] transition-colors"
+          >
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#1A2B6B] to-[#2A3D8B] text-white text-xs font-semibold shadow-sm">
+              YA
+            </div>
+            <div className="hidden flex-col items-start lg:flex">
+              <span className="text-xs font-semibold text-[#1A1A2E] leading-none mb-0.5">
+                Yoga Utama
+              </span>
+              <span className="text-[10px] text-[#6B7280] leading-none">
+                HR Admin
+              </span>
+            </div>
+            <ChevronDown className="hidden h-4 w-4 text-[#9CA3AF] lg:block" />
+          </button>
+
+          {/* User Dropdown */}
+          {showUserMenu && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setShowUserMenu(false)}
+              />
+              <div className="absolute right-0 top-full mt-2 w-56 rounded-xl border border-[#E5E7EB] bg-white shadow-xl z-50 overflow-hidden">
+                <div className="px-4 py-3 border-b border-[#F3F4F6]">
+                  <p className="text-sm font-semibold text-[#1A1A2E]">Yoga Utama</p>
+                  <p className="text-xs text-[#6B7280]">yoga.utama@bnifinance.co.id</p>
+                </div>
+                <div className="py-1">
+                  <button className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-[#374151] hover:bg-[#FAFAFA] transition-colors">
+                    <User className="h-4 w-4 text-[#6B7280]" />
+                    My Profile
+                  </button>
+                  <button className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-[#374151] hover:bg-[#FAFAFA] transition-colors">
+                    <Settings className="h-4 w-4 text-[#6B7280]" />
+                    Settings
+                  </button>
+                </div>
+                <div className="border-t border-[#F3F4F6] py-1">
+                  <button className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-[#EF4444] hover:bg-red-50 transition-colors">
+                    <LogOut className="h-4 w-4" />
+                    Sign Out
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </div>
+
+      {/* Custom Actions */}
+      {actions && (
+        <div className="hidden lg:flex items-center gap-3 ml-4">
+          {actions}
+        </div>
+      )}
     </header>
   );
 }
+
+// Notification Item Component
+function NotificationItem({
+  title,
+  message,
+  time,
+  unread = false,
+}: {
+  title: string;
+  message: string;
+  time: string;
+  unread?: boolean;
+}) {
+  return (
+    <button className="flex w-full items-start gap-3 px-4 py-3 hover:bg-[#FAFAFA] transition-colors text-left">
+      <div
+        className={cn(
+          "mt-1 h-2 w-2 rounded-full flex-shrink-0",
+          unread ? "bg-[#1A2B6B]" : "bg-transparent"
+        )}
+      />
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-[#1A1A2E] truncate">{title}</p>
+        <p className="text-xs text-[#6B7280] line-clamp-2 mt-0.5">{message}</p>
+        <p className="text-[10px] text-[#9CA3AF] mt-1">{time}</p>
+      </div>
+    </button>
+  );
+}
+
+// Export default Header
+export default Header;

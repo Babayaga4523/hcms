@@ -1,323 +1,548 @@
 "use client";
 
 import * as React from "react";
-import { Badge as ShadcnBadge } from "@/components/ui/badge";
-import { Card as ShadcnCard, CardHeader as ShadcnCardHeader, CardTitle as ShadcnCardTitle, CardContent as ShadcnCardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
-  Card,
-  Metric,
-  Text,
-  Flex,
+  Users,
+  UserCheck,
+  UserX,
+  Calendar,
+  TrendingUp,
+  Download,
+  RefreshCw,
+  ChevronRight,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  FileText,
+  Gift,
+  PartyPopper,
+} from "lucide-react";
+import {
   AreaChart,
+  Area,
   BarChart,
-  DonutChart,
-  Badge,
-} from "@tremor/react";
+  Bar,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 
-// Mock data for dashboard
-const employeeStats = {
+// ============ DATA ============
+const stats = {
   total: 1132,
   active: 666,
   inactive: 466,
-  lastUpdated: "20/05/2026, 14:30",
+  present: 623,
+  updated: "20 May 2026",
 };
 
-const genderAgeData = [
-  { ageGroup: "< 25", Male: 45, Female: 38 },
-  { ageGroup: "25-30", Male: 156, Female: 124 },
-  { ageGroup: "31-35", Male: 189, Female: 142 },
-  { ageGroup: "36-40", Male: 167, Female: 98 },
-  { ageGroup: "41-45", Male: 134, Female: 67 },
-  { ageGroup: "46-50", Male: 89, Female: 45 },
-  { ageGroup: "> 50", Male: 67, Female: 28 },
+const ageGenderData = [
+  { age: "< 25", male: 45, female: 38 },
+  { age: "25-30", male: 156, female: 124 },
+  { age: "31-35", male: 189, female: 142 },
+  { age: "36-40", male: 167, female: 98 },
+  { age: "41-45", male: 134, female: 67 },
+  { age: "46-50", male: 89, female: 45 },
+  { age: "> 50", male: 67, female: 28 },
 ];
 
-const locationData = [
-  { location: "Head Office", Male: 312, Female: 156 },
-  { location: "Branch Office", Male: 535, Female: 386 },
+const officeData = [
+  { name: "Head Office", value: 468 },
+  { name: "Branch Office", value: 664 },
 ];
 
-const genderPercentage = [
-  { name: "Male", value: 79.2 },
-  { name: "Female", value: 20.8 },
+const departmentData = [
+  { name: "Finance", value: 245 },
+  { name: "Operations", value: 312 },
+  { name: "Marketing", value: 189 },
+  { name: "HR", value: 156 },
+  { name: "IT", value: 98 },
+  { name: "Legal", value: 132 },
 ];
 
-const highlightButtons = [
-  { title: "Employees Contracts Expiring Soon", count: 13 },
-  { title: "Employee Birthday", count: 3 },
-  { title: "Information Anniversary at Work", count: 13 },
-  { title: "Public Holiday", count: 4 },
+const attendanceData = [
+  { day: "Mon", present: 580, absent: 52 },
+  { day: "Tue", present: 595, absent: 37 },
+  { day: "Wed", present: 612, absent: 20 },
+  { day: "Thu", present: 598, absent: 34 },
+  { day: "Fri", present: 623, absent: 9 },
 ];
 
-const thingsToDoTasks = [
-  { id: 1, title: "Review leave request from Budi Santoso", status: "pending" },
-  { id: 2, title: "Approve overtime for Dian Pratama", status: "pending" },
-  { id: 3, title: "Complete performance appraisal for Team A", status: "pending" },
+const tasks = [
+  { id: 1, title: "Review leave request from Budi Santoso", type: "Leave", priority: "high" },
+  { id: 2, title: "Approve overtime for Dian Pratama", type: "Overtime", priority: "medium" },
+  { id: 3, title: "Complete performance appraisal for Team A", type: "Appraisal", priority: "high" },
 ];
 
-// Summary Card Component (using Tremor Card and Metric)
-function SummaryCard({
-  title,
-  value,
-  subtitle,
-  icon,
-  bgColor,
-  iconColor,
-}: {
+const activities = [
+  { id: 1, action: "Leave approved", employee: "Sarah Wijaya", time: "10 min ago", type: "success" },
+  { id: 2, action: "New employee onboarded", employee: "Ahmad Fauzi", time: "1 hour ago", type: "info" },
+  { id: 3, action: "Resign request submitted", employee: "Diana Putri", time: "2 hours ago", type: "warning" },
+  { id: 4, action: "Overtime rejected", employee: "Budi Santoso", time: "3 hours ago", type: "danger" },
+];
+
+// ============ COLORS ============
+const CHART_COLORS = {
+  blue: "#3B82F6",
+  violet: "#8B5CF6",
+  green: "#10B981",
+  amber: "#F59E0B",
+  red: "#EF4444",
+  pink: "#EC4899",
+};
+
+// ============ CUSTOM TOOLTIP ============
+function CustomTooltip({ active, payload, label }: any) {
+  if (active && payload && payload.length) {
+    return (
+      <div className="rounded-lg border bg-white px-3 py-2 text-sm shadow-lg ring-1 ring-black/5">
+        <p className="font-medium text-gray-900 mb-1">{label}</p>
+        {payload.map((entry: any, index: number) => (
+          <p key={index} className="text-xs" style={{ color: entry.color }}>
+            {entry.name}: {entry.value}
+          </p>
+        ))}
+      </div>
+    );
+  }
+  return null;
+}
+
+// ============ UI COMPONENTS ============
+function StatCard({ title, value, subtitle, icon: Icon, trend, colorClass }: {
   title: string;
-  value: string | number;
+  value: string;
   subtitle: string;
-  icon: React.ReactNode;
-  bgColor: string;
-  iconColor: string;
+  icon: React.ElementType;
+  trend?: number;
+  colorClass: string;
 }) {
   return (
-    <Card className="p-4 border-0 ring-0 shadow-card" style={{ backgroundColor: bgColor }}>
-      <Flex alignItems="start">
-        <div>
-          <Text className="font-semibold text-xs text-[#6B7280]">{title}</Text>
-          <Metric className="mt-0.5 text-[#1A1A2E] text-xl sm:text-2xl font-bold leading-none">{value}</Metric>
-          <Text className="mt-1 text-[10px] text-[#6B7280]">{subtitle}</Text>
+    <Card className="relative overflow-hidden group hover:shadow-md transition-shadow">
+      <div className="p-5">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">{title}</p>
+            <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">{subtitle}</p>
+          </div>
+          <div className={`w-11 h-11 rounded-xl flex items-center justify-center ${colorClass}`}>
+            <Icon className="w-5 h-5 text-white" />
+          </div>
         </div>
-        <div
-          className="flex h-9 w-9 items-center justify-center rounded-lg"
-          style={{ backgroundColor: "white", color: iconColor }}
-        >
-          {icon}
-        </div>
-      </Flex>
+        {trend !== undefined && (
+          <div className="flex items-center gap-1 mt-3">
+            <TrendingUp className={`w-3.5 h-3.5 ${trend >= 0 ? "text-green-500" : "text-red-500 rotate-180"}`} />
+            <span className={`text-xs font-medium ${trend >= 0 ? "text-green-500" : "text-red-500"}`}>
+              {Math.abs(trend)}%
+            </span>
+            <span className="text-xs text-gray-400">vs last month</span>
+          </div>
+        )}
+      </div>
+      <div className={`absolute -right-4 -top-4 h-20 w-20 rounded-full opacity-10 ${colorClass.replace("bg-", "bg-")}`} />
     </Card>
   );
 }
 
-// Things To Do Widget
-function ThingsToDo() {
+function TaskItem({ task }: { task: typeof tasks[0] }) {
   return (
-    <ShadcnCard className="h-full">
-      <ShadcnCardHeader className="pb-2">
-        <ShadcnCardTitle>Things To Do</ShadcnCardTitle>
-      </ShadcnCardHeader>
-      <ShadcnCardContent>
-        {thingsToDoTasks.length === 0 ? (
-          <p className="text-center italic text-[#6B7280] py-8">Empty Task</p>
-        ) : (
-          <div className="space-y-1.5">
-            {thingsToDoTasks.map((task) => (
-              <div
-                key={task.id}
-                className="flex items-center gap-2.5 rounded-[6px] border border-[#E5E7EB] p-2.5 hover:bg-gray-50 cursor-pointer transition-colors"
-              >
-                <div className="h-1.5 w-1.5 rounded-full bg-[#E8A020]" />
-                <span className="flex-1 text-xs">{task.title}</span>
-                <ShadcnBadge variant="secondary" className="bg-[#FEF9C3] text-[#854D0E] hover:bg-[#FEF9C3] text-[10px] px-1.5 py-0.5">
-                  Pending
-                </ShadcnBadge>
-              </div>
-            ))}
-          </div>
-        )}
-      </ShadcnCardContent>
-    </ShadcnCard>
+    <div className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 hover:border-gray-200 hover:bg-gray-50 cursor-pointer transition-all group">
+      <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
+        <div className="w-2 h-2 rounded-full bg-amber-500" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-gray-800 truncate group-hover:text-blue-900">{task.title}</p>
+        <p className="text-[11px] text-gray-400">{task.type}</p>
+      </div>
+      <Badge variant={task.priority === "high" ? "warning" : "soft"} size="sm">
+        {task.priority}
+      </Badge>
+      <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-gray-500 group-hover:translate-x-0.5 transition-all" />
+    </div>
   );
 }
 
-// Highlight Information Widget
-function HighlightInfo() {
-  return (
-    <ShadcnCard className="h-full">
-      <ShadcnCardHeader className="pb-2">
-        <ShadcnCardTitle>Highlight Information</ShadcnCardTitle>
-      </ShadcnCardHeader>
-      <ShadcnCardContent>
-        <div className="space-y-1.5">
-          {highlightButtons.map((item, index) => (
-            <button
-              key={index}
-              className="flex w-full items-center justify-between rounded-[6px] bg-[#4B5DAA] px-3 py-2 text-white transition-colors hover:bg-[#3B4D8A]"
-            >
-              <span className="text-xs font-medium">{item.title}</span>
-              <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-white text-[10px] font-bold text-[#1A2B6B] px-1">
-                {item.count}
-              </span>
-            </button>
-          ))}
-        </div>
-      </ShadcnCardContent>
-    </ShadcnCard>
-  );
-}
-
-// My Information Widget
-function MyInformation() {
-  const employeeData = {
-    name: "Yoga Utama",
-    position: "HR Admin",
-    department: "Human Capital",
-    joinDate: "15 Maret 2021",
-    remainingLeave: 8,
-    pendingTask: 3,
+function ActivityItem({ activity }: { activity: typeof activities[0] }) {
+  const typeStyles: Record<string, string> = {
+    success: "bg-green-50 text-green-600",
+    danger: "bg-red-50 text-red-600",
+    warning: "bg-amber-50 text-amber-600",
+    info: "bg-blue-50 text-blue-600",
   };
 
+  const icons: Record<string, React.ElementType> = {
+    success: CheckCircle,
+    danger: XCircle,
+    warning: AlertCircle,
+    info: Users,
+  };
+
+  const Icon = icons[activity.type] || CheckCircle;
+
   return (
-    <ShadcnCard className="h-full">
-      <ShadcnCardHeader className="pb-2">
-        <ShadcnCardTitle>My Information</ShadcnCardTitle>
-      </ShadcnCardHeader>
-      <ShadcnCardContent>
-        <div className="space-y-2.5">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1A2B6B] text-sm font-bold text-white">
-              YA
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-[#1A1A2E]">{employeeData.name}</p>
-              <p className="text-[11px] text-[#6B7280]">{employeeData.position}</p>
-            </div>
-          </div>
-          <div className="border-t border-[#E5E7EB] pt-2.5 space-y-1.5">
-            <div className="flex justify-between text-xs">
-              <span className="text-[#6B7280]">Department</span>
-              <span className="font-medium">{employeeData.department}</span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-[#6B7280]">Join Date</span>
-              <span className="font-medium">{employeeData.joinDate}</span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-[#6B7280]">Remaining Leave</span>
-              <span className="font-medium text-[#10B981]">{employeeData.remainingLeave} days</span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-[#6B7280]">Pending Task</span>
-              <span className="font-medium text-[#E8A020]">{employeeData.pendingTask}</span>
-            </div>
-          </div>
-        </div>
-      </ShadcnCardContent>
-    </ShadcnCard>
+    <div className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors group">
+      <div className={`w-9 h-9 rounded-full flex items-center justify-center ${typeStyles[activity.type]}`}>
+        <Icon className="w-4 h-4" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-gray-800">{activity.action}</p>
+        <p className="text-[11px] text-gray-400">by {activity.employee}</p>
+      </div>
+      <span className="text-[11px] text-gray-400 group-hover:text-gray-600">{activity.time}</span>
+    </div>
   );
 }
 
-// Main Dashboard Page
+function QuickCard({ icon: Icon, label, count, bgColor }: {
+  icon: React.ElementType;
+  label: string;
+  count: number;
+  bgColor: string;
+}) {
+  return (
+    <button className={`flex items-center gap-3 p-3 rounded-xl ${bgColor} text-white hover:opacity-90 transition-opacity text-left w-full`}>
+      <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center">
+        <Icon className="w-4 h-4" />
+      </div>
+      <div>
+        <p className="text-[10px] text-white/70">{label}</p>
+        <p className="text-lg font-bold">{count}</p>
+      </div>
+    </button>
+  );
+}
+
+// ============ MAIN PAGE ============
 export default function DashboardPage() {
   return (
-    <div className="space-y-4">
-      {/* Page Header */}
-      <div>
-        <h1 className="text-lg font-bold text-[#1A1A2E]">Dashboard</h1>
-        <p className="text-xs text-[#6B7280]">
-          Welcome back, Yoga! Here&apos;s what&apos;s happening with your team.
-        </p>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">Dashboard</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Welcome back, Yoga! Here&apos;s your team overview.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" size="sm">
+            <RefreshCw className="w-3.5 h-3.5" />
+            Refresh
+          </Button>
+          <Button variant="outline" size="sm">
+            <Download className="w-3.5 h-3.5" />
+            Export
+          </Button>
+        </div>
       </div>
 
-      {/* Top Row - 3 Widgets */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <ThingsToDo />
-        <HighlightInfo />
-        <MyInformation />
+      {/* Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard title="Total Employees" value="1,132" subtitle={`as of ${stats.updated}`} icon={Users} colorClass="bg-blue-600" />
+        <StatCard title="Active" value="666" subtitle="58.8% of total" icon={UserCheck} trend={2.5} colorClass="bg-green-600" />
+        <StatCard title="Inactive" value="466" subtitle="On leave/terminated" icon={UserX} colorClass="bg-red-500" />
+        <StatCard title="Attendance" value="623" subtitle="88% present rate" icon={Calendar} trend={1.2} colorClass="bg-amber-500" />
       </div>
 
-      {/* Summary Cards Row */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <SummaryCard
-          title="All Employee"
-          value={employeeStats.total}
-          subtitle={`as of ${employeeStats.lastUpdated}`}
-          icon={
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
-            </svg>
-          }
-          bgColor="#EEF0F8"
-          iconColor="#1A2B6B"
-        />
-        <SummaryCard
-          title="Employee Active"
-          value={employeeStats.active}
-          subtitle={`as of ${employeeStats.lastUpdated}`}
-          icon={
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-          }
-          bgColor="#ECFDF5"
-          iconColor="#10B981"
-        />
-        <SummaryCard
-          title="Employee Inactive"
-          value={employeeStats.inactive}
-          subtitle={`as of ${employeeStats.lastUpdated}`}
-          icon={
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-            </svg>
-          }
-          bgColor="#FEF2F2"
-          iconColor="#EF4444"
-        />
-      </div>
+      {/* Main Grid */}
+      <div className="grid lg:grid-cols-3 gap-6">
+        {/* Left Column */}
+        <div className="space-y-5">
+          {/* Tasks */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                  Things To Do
+                </CardTitle>
+                <Badge variant="soft" size="sm">{tasks.length} pending</Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {tasks.map(task => <TaskItem key={task.id} task={task} />)}
+              <Button variant="ghost" size="sm" className="w-full mt-2" rightIcon={<ChevronRight className="w-3.5 h-3.5" />}>
+                View all tasks
+              </Button>
+            </CardContent>
+          </Card>
 
-      {/* Charts Row */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        {/* Area Chart */}
-        <Card className="shadow-card ring-0 border border-[#E5E7EB]">
-          <Text className="text-sm font-semibold text-[#1A1A2E] mb-3">Employees by Gender and Age</Text>
-          <AreaChart
-            className="h-64"
-            data={genderAgeData}
-            index="ageGroup"
-            categories={["Male", "Female"]}
-            colors={["blue", "pink"]}
-            showLegend={true}
-            showGridLines={true}
-            yAxisWidth={40}
-            curveType="monotone"
-          />
-        </Card>
+          {/* Quick Alerts */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold">Quick Alerts</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-2.5">
+                <QuickCard icon={FileText} label="Contracts" count={13} bgColor="bg-blue-600" />
+                <QuickCard icon={Gift} label="Birthdays" count={3} bgColor="bg-pink-500" />
+                <QuickCard icon={PartyPopper} label="Anniversaries" count={5} bgColor="bg-purple-600" />
+                <QuickCard icon={Calendar} label="Holidays" count={4} bgColor="bg-teal-600" />
+              </div>
+            </CardContent>
+          </Card>
 
-        {/* Bar Chart */}
-        <Card className="shadow-card ring-0 border border-[#E5E7EB]">
-          <Text className="text-sm font-semibold text-[#1A1A2E] mb-3">Location</Text>
-          <BarChart
-            className="h-64"
-            data={locationData}
-            index="location"
-            categories={["Male", "Female"]}
-            colors={["blue", "pink"]}
-            layout="vertical"
-            showLegend={true}
-            showGridLines={true}
-            yAxisWidth={100}
-          />
-        </Card>
+          {/* My Profile */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold">My Profile</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="relative">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-900 to-blue-700 flex items-center justify-center text-white font-bold text-sm">
+                    YA
+                  </div>
+                  <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-white" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-gray-900">Yoga Utama</p>
+                  <p className="text-xs text-gray-500">HR Admin</p>
+                  <Badge variant="success" size="sm" className="mt-1">Active</Badge>
+                </div>
+              </div>
+              <div className="border-t border-gray-100 pt-3 space-y-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-400">Department</span>
+                  <span className="font-medium text-gray-700">Human Capital</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-400">Join Date</span>
+                  <span className="font-medium text-gray-700">15 Mar 2021</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-400">Remaining Leave</span>
+                  <span className="font-medium text-green-600">8 days</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-400">Pending Task</span>
+                  <span className="font-medium text-amber-600">3</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
-        {/* Donut Chart */}
-        <Card className="shadow-card ring-0 border border-[#E5E7EB]">
-          <Text className="text-sm font-semibold text-[#1A1A2E] mb-3">Percentage</Text>
-          <DonutChart
-            className="h-44 mt-4"
-            data={genderPercentage}
-            category="value"
-            index="name"
-            colors={["blue", "pink"]}
-            showLabel={false}
-            valueFormatter={(number) => `${number}%`}
-          />
-          <Flex className="mt-4 justify-center gap-6">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-blue-500" />
-              <Text className="text-xs">Male <span className="font-bold text-[#1A1A2E]">79.2%</span> (847)</Text>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-pink-500" />
-              <Text className="text-xs">Female <span className="font-bold text-[#1A1A2E]">20.8%</span> (285)</Text>
-            </div>
-          </Flex>
-          <Text className="text-center mt-4 text-[10px] text-[#6B7280]">
-            Total Employee: {employeeStats.total}
-          </Text>
-        </Card>
+        {/* Right Column */}
+        <div className="lg:col-span-2 space-y-5">
+          {/* Charts Row */}
+          <div className="grid md:grid-cols-2 gap-5">
+            {/* Area Chart - Age & Gender */}
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-semibold">Employees by Age & Gender</CardTitle>
+                  <Badge variant="soft" size="sm">7 groups</Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={200}>
+                  <AreaChart data={ageGenderData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
+                    <defs>
+                      <linearGradient id="colorMale" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={CHART_COLORS.blue} stopOpacity={0.3} />
+                        <stop offset="95%" stopColor={CHART_COLORS.blue} stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="colorFemale" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={CHART_COLORS.pink} stopOpacity={0.3} />
+                        <stop offset="95%" stopColor={CHART_COLORS.pink} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
+                    <XAxis dataKey="age" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                    <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Legend wrapperStyle={{ fontSize: 10 }} />
+                    <Area
+                      type="monotone"
+                      dataKey="male"
+                      name="Male"
+                      stroke={CHART_COLORS.blue}
+                      fillOpacity={1}
+                      fill="url(#colorMale)"
+                      strokeWidth={2}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="female"
+                      name="Female"
+                      stroke={CHART_COLORS.pink}
+                      fillOpacity={1}
+                      fill="url(#colorFemale)"
+                      strokeWidth={2}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* Pie Chart - Office Distribution */}
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-semibold">Office Distribution</CardTitle>
+                  <Badge variant="soft" size="sm">2 locations</Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center">
+                  <ResponsiveContainer width="50%" height={180}>
+                    <PieChart>
+                      <Pie
+                        data={officeData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={45}
+                        outerRadius={70}
+                        paddingAngle={2}
+                        dataKey="value"
+                      >
+                        <Cell fill={CHART_COLORS.blue} />
+                        <Cell fill={CHART_COLORS.violet} />
+                      </Pie>
+                      <Tooltip content={<CustomTooltip />} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="flex-1 space-y-3">
+                    {officeData.map((item, index) => (
+                      <div key={index} className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div
+                            className="w-2.5 h-2.5 rounded-full"
+                            style={{ backgroundColor: index === 0 ? CHART_COLORS.blue : CHART_COLORS.violet }}
+                          />
+                          <span className="text-sm text-gray-600">{item.name}</span>
+                        </div>
+                        <span className="text-sm font-semibold text-gray-900">{item.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Bar Chart - Department */}
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold">Employees by Department</CardTitle>
+                <Button variant="ghost" size="sm" rightIcon={<ChevronRight className="w-3.5 h-3.5" />}>
+                  Details
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={departmentData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" horizontal={false} />
+                  <XAxis type="number" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                  <YAxis
+                    dataKey="name"
+                    type="category"
+                    tick={{ fontSize: 10 }}
+                    tickLine={false}
+                    axisLine={false}
+                    width={60}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Bar
+                    dataKey="value"
+                    name="Employees"
+                    fill={CHART_COLORS.blue}
+                    radius={[0, 4, 4, 0]}
+                    barSize={20}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+
+          {/* Gender Ratio & Weekly Attendance */}
+          <div className="grid md:grid-cols-2 gap-5">
+            {/* Gender Ratio */}
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-semibold">Gender Ratio</CardTitle>
+                  <Badge variant="soft" size="sm">1,132 employees</Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-center gap-10 py-4">
+                  <div className="text-center group">
+                    <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center text-xl font-bold text-blue-600 group-hover:scale-105 transition-transform">
+                      79.2%
+                    </div>
+                    <p className="text-sm font-medium text-gray-700 mt-2">Male</p>
+                    <p className="text-xs text-gray-400">847 employees</p>
+                  </div>
+                  <div className="text-center group">
+                    <div className="w-16 h-16 rounded-full bg-pink-50 flex items-center justify-center text-xl font-bold text-pink-500 group-hover:scale-105 transition-transform">
+                      20.8%
+                    </div>
+                    <p className="text-sm font-medium text-gray-700 mt-2">Female</p>
+                    <p className="text-xs text-gray-400">285 employees</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Weekly Attendance */}
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-sm font-semibold">Weekly Attendance</CardTitle>
+                  <Badge variant="success" size="sm">+2.5%</Badge>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <ResponsiveContainer width="100%" height={150}>
+                  <BarChart data={attendanceData} barCategoryGap="30%">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
+                    <XAxis dataKey="day" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                    <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Bar
+                      dataKey="present"
+                      name="Present"
+                      fill={CHART_COLORS.green}
+                      radius={[4, 4, 0, 0]}
+                      maxBarSize={40}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Recent Activity */}
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-semibold">Recent Activity</CardTitle>
+                <Button variant="ghost" size="sm" rightIcon={<ChevronRight className="w-3.5 h-3.5" />}>
+                  View all
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="grid md:grid-cols-2 gap-2">
+                {activities.map(activity => <ActivityItem key={activity.id} activity={activity} />)}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

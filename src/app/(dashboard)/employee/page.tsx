@@ -635,7 +635,7 @@ export default function EmployeeDataPage() {
         open={selectedEmployee !== null}
         onClose={() => setSelectedEmployee(null)}
         title="Employee Details"
-        width="480px"
+        width="lg"
       >
         {selectedEmployee && (
           <EmployeeDetail
