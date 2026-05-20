@@ -1,0 +1,365 @@
+// HCMS - Human Capital Management System
+// Prisma Schema for BNI Finance
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============== ENUMS ==============
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+  RESIGNED
+  TERMINATED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  SICK
+  ON_LEAVE
+  WFH
+  PERMIT
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum OvertimeStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum WorkPermissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum AppraisalStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+}
+
+enum PaktaStatus {
+  PENDING
+  SIGNED
+  EXPIRED
+}
+
+enum ResignCategory {
+  VOLUNTARY
+  INVOLUNTARY
+  RETIREMENT
+  PROBATION
+}
+
+enum ResignStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  COMPLETED
+}
+
+enum ClearanceStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+}
+
+// ============== REFERENCE TABLES ==============
+
+model Department {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  divisions Division[]
+  employees Employee[]
+
+  @@map("departments")
+}
+
+model Division {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  name         String
+  departmentId String
+  description  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  department Department @relation(fields: [departmentId], references: [id])
+  positions  Position[]
+  employees  Employee[]
+
+  @@map("divisions")
+}
+
+model Position {
+  id         String   @id @default(cuid())
+  code       String   @unique
+  name       String
+  level      Int      @default(1)
+  divisionId String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  division  Division   @relation(fields: [divisionId], references: [id])
+  employees Employee[]
+
+  @@map("positions")
+}
+
+model LeaveType {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  description String?
+  isPaid      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  quotas LeaveQuota[]
+  leaves Leave[]
+
+  @@map("leave_types")
+}
+
+// ============== CORE TABLES ==============
+
+model Employee {
+  id           String   @id @default(cuid())
+  nik          String   @unique
+  email        String   @unique
+  firstName    String
+  lastName     String
+  gender       Gender
+  birthDate    DateTime @db.Date
+  phone        String?
+  address      String?
+  positionId   String
+  divisionId   String
+  departmentId String
+  joinDate     DateTime @db.Date
+  status       EmployeeStatus @default(ACTIVE)
+  ktpNumber    String?
+  bpjsNumber   String?
+  npwpNumber   String?
+  profilePhoto String?
+  isLocked     Boolean  @default(false)
+  lockedReason String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  position   Position   @relation(fields: [positionId], references: [id])
+  division   Division   @relation(fields: [divisionId], references: [id])
+  department Department @relation(fields: [departmentId], references: [id])
+
+  attendances           Attendance[]
+  leaves                Leave[]
+  leaveQuotas           LeaveQuota[]
+  overtimes             Overtime[]
+  performanceAppraisals PerformanceAppraisal[]
+  paktaIntegritas       PaktaIntegritas[]
+  resigns               Resign[]
+  workPermissions       WorkPermission[]
+
+  @@map("employees")
+}
+
+model Attendance {
+  id         String   @id @default(cuid())
+  employeeId String
+  date       DateTime @db.Date
+  clockIn    DateTime?
+  clockOut   DateTime?
+  status     AttendanceStatus
+  location   String?
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([employeeId, date])
+  @@map("attendances")
+}
+
+model Leave {
+  id          String   @id @default(cuid())
+  employeeId  String
+  leaveTypeId String
+  startDate   DateTime @db.Date
+  endDate     DateTime @db.Date
+  totalDays   Int
+  reason      String?
+  status      LeaveStatus @default(PENDING)
+  approvedBy  String?
+  approvedAt  DateTime?
+  notes       String?
+  attachmentUrl String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  employee  Employee  @relation(fields: [employeeId], references: [id])
+  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id])
+
+  @@map("leaves")
+}
+
+model LeaveQuota {
+  id          String   @id @default(cuid())
+  employeeId  String
+  leaveTypeId String
+  year        Int
+  totalDays   Int
+  usedDays    Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  employee  Employee  @relation(fields: [employeeId], references: [id])
+  leaveType LeaveType @relation(fields: [leaveTypeId], references: [id])
+
+  @@unique([employeeId, leaveTypeId, year])
+  @@map("leave_quotas")
+}
+
+model Overtime {
+  id         String   @id @default(cuid())
+  employeeId String
+  date       DateTime @db.Date
+  startTime  DateTime
+  endTime    DateTime
+  totalHours Float
+  reason     String
+  status     OvertimeStatus @default(PENDING)
+  approvedBy String?
+  approvedAt DateTime?
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("overtimes")
+}
+
+model WorkPermission {
+  id         String   @id @default(cuid())
+  employeeId String
+  date       DateTime @db.Date
+  startTime  DateTime
+  endTime    DateTime
+  reason     String
+  status     WorkPermissionStatus @default(PENDING)
+  approvedBy String?
+  approvedAt DateTime?
+  notes      String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("work_permissions")
+}
+
+model PerformanceAppraisal {
+  id              String   @id @default(cuid())
+  employeeId      String
+  period          String
+  kpiScore        Float
+  coreValueScore  Float
+  leadershipScore Float
+  overallScore    Float
+  notes           String?
+  status          AppraisalStatus @default(DRAFT)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@unique([employeeId, period])
+  @@map("performance_appraisals")
+}
+
+model PaktaIntegritas {
+  id             String   @id @default(cuid())
+  employeeId     String
+  assignmentDate DateTime @db.Date
+  dueDate        DateTime @db.Date
+  signedDate     DateTime?
+  status         PaktaStatus @default(PENDING)
+  fileUrl        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("pakta_integritas")
+}
+
+model Resign {
+  id              String   @id @default(cuid())
+  employeeId      String
+  requestDate     DateTime @db.Date
+  resignDate      DateTime @db.Date
+  reason          String
+  category        ResignCategory
+  status          ResignStatus @default(PENDING)
+  approvedBy      String?
+  approvedAt      DateTime?
+  notes           String?
+  clearanceStatus ClearanceStatus @default(PENDING)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id])
+
+  @@map("resigns")
+}
+
+model PublicHoliday {
+  id          String   @id @default(cuid())
+  date        DateTime @db.Date
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+
+  @@map("public_holidays")
+}
+
+model WorkSchedule {
+  id        String   @id @default(cuid())
+  name      String
+  dayOfWeek Int
+  startTime String
+  endTime   String
+  isWorking Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("work_schedules")
+}
