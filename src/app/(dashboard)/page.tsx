@@ -1,16 +1,17 @@
 "use client";
 
 import * as React from "react";
+import { useSession } from "next-auth/react";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton, StatCardSkeleton, ChartSkeleton } from "@/components/ui/skeleton";
 import {
   Users,
   UserCheck,
   UserX,
   Calendar,
   TrendingUp,
-  Download,
   RefreshCw,
   ChevronRight,
   CheckCircle,
@@ -21,76 +22,55 @@ import {
   PartyPopper,
 } from "lucide-react";
 import {
-  AreaChart,
-  Area,
   BarChart,
   Bar,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
 } from "recharts";
 
-// ============ DATA ============
-const stats = {
-  total: 1132,
-  active: 666,
-  inactive: 466,
-  present: 623,
-  updated: "20 May 2026",
-};
+// ============ Types ============
+interface DashboardStats {
+  employees: {
+    total: number;
+    active: number;
+    inactive: number;
+  };
+  attendance: {
+    present: number;
+    percentage: number;
+    weekly: Array<{ day: string; present: number; absent: number }>;
+  };
+  demographics: {
+    male: { count: number; percentage: number };
+    female: { count: number; percentage: number };
+  };
+  departments: Array<{ name: string; value: number }>;
+  quickAlerts: {
+    pendingLeaveRequests: number;
+    upcomingBirthdays: number;
+    upcomingHolidays: number;
+    upcomingContracts: number;
+  };
+  updatedAt: string;
+}
 
-const ageGenderData = [
-  { age: "< 25", male: 45, female: 38 },
-  { age: "25-30", male: 156, female: 124 },
-  { age: "31-35", male: 189, female: 142 },
-  { age: "36-40", male: 167, female: 98 },
-  { age: "41-45", male: 134, female: 67 },
-  { age: "46-50", male: 89, female: 45 },
-  { age: "> 50", male: 67, female: 28 },
-];
+interface Task {
+  id: string;
+  title: string;
+  type: string;
+  priority: "high" | "medium" | "low";
+}
 
-const officeData = [
-  { name: "Head Office", value: 468 },
-  { name: "Branch Office", value: 664 },
-];
-
-const departmentData = [
-  { name: "Finance", value: 245 },
-  { name: "Operations", value: 312 },
-  { name: "Marketing", value: 189 },
-  { name: "HR", value: 156 },
-  { name: "IT", value: 98 },
-  { name: "Legal", value: 132 },
-];
-
-const attendanceData = [
-  { day: "Mon", present: 580, absent: 52 },
-  { day: "Tue", present: 595, absent: 37 },
-  { day: "Wed", present: 612, absent: 20 },
-  { day: "Thu", present: 598, absent: 34 },
-  { day: "Fri", present: 623, absent: 9 },
-];
-
-const tasks = [
-  { id: 1, title: "Review leave request from Budi Santoso", type: "Leave", priority: "high" },
-  { id: 2, title: "Approve overtime for Dian Pratama", type: "Overtime", priority: "medium" },
-  { id: 3, title: "Complete performance appraisal for Team A", type: "Appraisal", priority: "high" },
-];
-
-const activities = [
-  { id: 1, action: "Leave approved", employee: "Sarah Wijaya", time: "10 min ago", type: "success" },
-  { id: 2, action: "New employee onboarded", employee: "Ahmad Fauzi", time: "1 hour ago", type: "info" },
-  { id: 3, action: "Resign request submitted", employee: "Diana Putri", time: "2 hours ago", type: "warning" },
-  { id: 4, action: "Overtime rejected", employee: "Budi Santoso", time: "3 hours ago", type: "danger" },
-];
+interface Activity {
+  id: string;
+  action: string;
+  employee: string;
+  time: string;
+  type: "success" | "danger" | "warning" | "info";
+}
 
 // ============ COLORS ============
 const CHART_COLORS = {
@@ -156,7 +136,7 @@ function StatCard({ title, value, subtitle, icon: Icon, trend, colorClass }: {
   );
 }
 
-function TaskItem({ task }: { task: typeof tasks[0] }) {
+function TaskItem({ task }: { task: Task }) {
   return (
     <div className="flex items-center gap-3 p-3 rounded-lg border border-gray-100 hover:border-gray-200 hover:bg-gray-50 cursor-pointer transition-all group">
       <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
@@ -174,7 +154,7 @@ function TaskItem({ task }: { task: typeof tasks[0] }) {
   );
 }
 
-function ActivityItem({ activity }: { activity: typeof activities[0] }) {
+function ActivityItem({ activity }: { activity: Activity }) {
   const typeStyles: Record<string, string> = {
     success: "bg-green-50 text-green-600",
     danger: "bg-red-50 text-red-600",
@@ -224,210 +204,370 @@ function QuickCard({ icon: Icon, label, count, bgColor }: {
   );
 }
 
+// ============ PROFILE COMPONENT WITH SESSION ============
+function ProfileCard({ session }: { session: { user: { name: string; email: string; role: string; department?: string; position?: string; nik?: string } } }) {
+  const user = session.user;
+  const initials = user.name
+    .split(" ")
+    .map((n: string) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+
+  const roleLabels: Record<string, string> = {
+    SUPER_ADMIN: "Super Admin",
+    ADMIN: "HR Admin",
+    MANAGER: "Manager",
+    EMPLOYEE: "Employee",
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-sm font-semibold">My Profile</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center gap-3 mb-4">
+          <div className="relative">
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-900 to-blue-700 flex items-center justify-center text-white font-bold text-sm">
+              {initials}
+            </div>
+            <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-white" />
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-gray-900">{user.name}</p>
+            <p className="text-xs text-gray-500">{roleLabels[user.role] || user.role}</p>
+            <Badge variant="success" size="sm" className="mt-1">Active</Badge>
+          </div>
+        </div>
+        <div className="border-t border-gray-100 pt-3 space-y-2">
+          <div className="flex justify-between text-xs">
+            <span className="text-gray-400">Department</span>
+            <span className="font-medium text-gray-700">{user.department || "-"}</span>
+          </div>
+          <div className="flex justify-between text-xs">
+            <span className="text-gray-400">Position</span>
+            <span className="font-medium text-gray-700">{user.position || "-"}</span>
+          </div>
+          <div className="flex justify-between text-xs">
+            <span className="text-gray-400">NIK</span>
+            <span className="font-medium text-gray-700">{user.nik || "-"}</span>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============ FETCH DATA ============
+async function fetchDashboardData(): Promise<DashboardStats | null> {
+  try {
+    const response = await fetch("/api/dashboard/stats", {
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        window.location.href = "/login";
+        return null;
+      }
+      throw new Error("Failed to fetch dashboard data");
+    }
+
+    const result = await response.json();
+    return result.data;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchPendingTasks(): Promise<Task[]> {
+  try {
+    // Fetch pending leave requests for "Things To Do"
+    const response = await fetch("/api/leave?status=PENDING&pageSize=3", {
+      credentials: "include",
+    });
+
+    if (!response.ok) return [];
+
+    const result = await response.json();
+    return (result.data || []).map((leave: any) => ({
+      id: leave.id,
+      title: `Review leave request from ${leave.employee?.firstName} ${leave.employee?.lastName}`,
+      type: "Leave",
+      priority: "high" as const,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+async function fetchRecentActivities(): Promise<Activity[]> {
+  try {
+    // For now, return static activities
+    // In production, this would come from activity logs
+    return [
+      { id: "1", action: "Leave approved", employee: "Sarah Wijaya", time: "10 min ago", type: "success" as const },
+      { id: "2", action: "New employee onboarded", employee: "Ahmad Fauzi", time: "1 hour ago", type: "info" as const },
+      { id: "3", action: "Resign request submitted", employee: "Diana Putri", time: "2 hours ago", type: "warning" as const },
+      { id: "4", action: "Overtime rejected", employee: "Budi Santoso", time: "3 hours ago", type: "danger" as const },
+    ];
+  } catch {
+    return [];
+  }
+}
+
 // ============ MAIN PAGE ============
 export default function DashboardPage() {
+  const { data: session, status } = useSession();
+
+  const [stats, setStats] = React.useState<DashboardStats | null>(null);
+  const [tasks, setTasks] = React.useState<Task[]>([]);
+  const [activities, setActivities] = React.useState<Activity[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  // Fetch dashboard data
+  React.useEffect(() => {
+    async function loadData() {
+      if (status !== "authenticated") return;
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const [statsData, tasksData, activitiesData] = await Promise.all([
+          fetchDashboardData(),
+          fetchPendingTasks(),
+          fetchRecentActivities(),
+        ]);
+
+        setStats(statsData);
+        setTasks(tasksData);
+        setActivities(activitiesData);
+      } catch (err) {
+        setError("Failed to load dashboard data");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadData();
+  }, [status]);
+
+  // Show loading state
+  if (status === "loading" || loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-4 w-64 mt-2" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => <StatCardSkeleton key={i} />)}
+        </div>
+        <div className="grid lg:grid-cols-3 gap-6">
+          <div className="space-y-5">
+            <Skeleton className="h-48" />
+            <Skeleton className="h-36" />
+            <Skeleton className="h-44" />
+          </div>
+          <div className="lg:col-span-2 space-y-5">
+            <div className="grid md:grid-cols-2 gap-5">
+              <ChartSkeleton height="h-[280px]" />
+              <ChartSkeleton height="h-[280px]" />
+            </div>
+            <ChartSkeleton />
+            <div className="grid md:grid-cols-2 gap-5">
+              <ChartSkeleton height="h-[200px]" />
+              <ChartSkeleton height="h-[200px]" />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (!session || error) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <h2 className="text-lg font-semibold text-gray-900">Error Loading Dashboard</h2>
+          <p className="text-sm text-gray-500">{error || "Please sign in to access the dashboard."}</p>
+          <Button className="mt-4" onClick={() => window.location.reload()}>
+            Retry
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  const user = session.user;
+  const firstName = user.name?.split(" ")[0] || "User";
+
+  // Prepare chart data
+  const weeklyAttendance = stats?.attendance.weekly || [];
+  const departmentData = stats?.departments || [];
+  const demographics = stats?.demographics;
+
+  // Gender ratio data
+  const genderRatioData = demographics ? [
+    { name: "Male", value: demographics.male.count, percentage: demographics.male.percentage },
+    { name: "Female", value: demographics.female.count, percentage: demographics.female.percentage },
+  ] : [];
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Welcome back, Yoga! Here&apos;s your team overview.</p>
+          <h1 className="text-lg font-bold text-gray-900">Dashboard</h1>
+          <p className="text-xs text-gray-500">Welcome back, {firstName}!</p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm">
-            <RefreshCw className="w-3.5 h-3.5" />
-            Refresh
-          </Button>
-          <Button variant="outline" size="sm">
-            <Download className="w-3.5 h-3.5" />
-            Export
-          </Button>
-        </div>
+        <Button variant="secondary" size="sm" leftIcon={<RefreshCw className="w-3.5 h-3.5" />} onClick={() => window.location.reload()}>
+          Refresh
+        </Button>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard title="Total Employees" value="1,132" subtitle={`as of ${stats.updated}`} icon={Users} colorClass="bg-blue-600" />
-        <StatCard title="Active" value="666" subtitle="58.8% of total" icon={UserCheck} trend={2.5} colorClass="bg-green-600" />
-        <StatCard title="Inactive" value="466" subtitle="On leave/terminated" icon={UserX} colorClass="bg-red-500" />
-        <StatCard title="Attendance" value="623" subtitle="88% present rate" icon={Calendar} trend={1.2} colorClass="bg-amber-500" />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <StatCard
+          title="Total Employees"
+          value={stats?.employees.total.toLocaleString() || "0"}
+          subtitle="as of today"
+          icon={Users}
+          colorClass="bg-blue-600"
+        />
+        <StatCard
+          title="Active"
+          value={stats?.employees.active.toLocaleString() || "0"}
+          subtitle={`${stats?.employees.total ? Math.round((stats.employees.active / stats.employees.total) * 100) : 0}% of total`}
+          icon={UserCheck}
+          trend={2.5}
+          colorClass="bg-green-600"
+        />
+        <StatCard
+          title="Inactive"
+          value={stats?.employees.inactive.toLocaleString() || "0"}
+          subtitle="On leave/terminated"
+          icon={UserX}
+          colorClass="bg-red-500"
+        />
+        <StatCard
+          title="Attendance Today"
+          value={stats?.attendance.present.toLocaleString() || "0"}
+          subtitle={`${stats?.attendance.percentage || 0}% present rate`}
+          icon={Calendar}
+          trend={1.2}
+          colorClass="bg-amber-500"
+        />
       </div>
 
       {/* Main Grid */}
-      <div className="grid lg:grid-cols-3 gap-6">
+      <div className="grid lg:grid-cols-3 gap-4">
         {/* Left Column */}
-        <div className="space-y-5">
+        <div className="space-y-3">
           {/* Tasks */}
           <Card>
-            <CardHeader className="pb-3">
+            <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                <CardTitle className="text-xs font-semibold flex items-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
                   Things To Do
                 </CardTitle>
-                <Badge variant="soft" size="sm">{tasks.length} pending</Badge>
+                <Badge variant="soft" size="sm">{tasks.length}</Badge>
               </div>
             </CardHeader>
-            <CardContent className="space-y-2">
-              {tasks.map(task => <TaskItem key={task.id} task={task} />)}
-              <Button variant="ghost" size="sm" className="w-full mt-2" rightIcon={<ChevronRight className="w-3.5 h-3.5" />}>
-                View all tasks
-              </Button>
+            <CardContent className="space-y-1.5">
+              {tasks.length > 0 ? (
+                tasks.map((task) => <TaskItem key={task.id} task={task} />)
+              ) : (
+                <p className="text-xs text-gray-500 text-center py-3">No pending tasks</p>
+              )}
             </CardContent>
           </Card>
 
           {/* Quick Alerts */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold">Quick Alerts</CardTitle>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-xs font-semibold">Quick Alerts</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 gap-2.5">
-                <QuickCard icon={FileText} label="Contracts" count={13} bgColor="bg-blue-600" />
-                <QuickCard icon={Gift} label="Birthdays" count={3} bgColor="bg-pink-500" />
-                <QuickCard icon={PartyPopper} label="Anniversaries" count={5} bgColor="bg-purple-600" />
-                <QuickCard icon={Calendar} label="Holidays" count={4} bgColor="bg-teal-600" />
+              <div className="grid grid-cols-2 gap-2">
+                <QuickCard icon={FileText} label="Contracts" count={stats?.quickAlerts.upcomingContracts || 0} bgColor="bg-blue-600" />
+                <QuickCard icon={Gift} label="Birthdays" count={stats?.quickAlerts.upcomingBirthdays || 0} bgColor="bg-pink-500" />
+                <QuickCard icon={PartyPopper} label="Anniversaries" count={0} bgColor="bg-purple-600" />
+                <QuickCard icon={Calendar} label="Holidays" count={stats?.quickAlerts.upcomingHolidays || 0} bgColor="bg-teal-600" />
               </div>
             </CardContent>
           </Card>
 
           {/* My Profile */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold">My Profile</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="relative">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-900 to-blue-700 flex items-center justify-center text-white font-bold text-sm">
-                    YA
-                  </div>
-                  <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-white" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-900">Yoga Utama</p>
-                  <p className="text-xs text-gray-500">HR Admin</p>
-                  <Badge variant="success" size="sm" className="mt-1">Active</Badge>
-                </div>
-              </div>
-              <div className="border-t border-gray-100 pt-3 space-y-2">
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-400">Department</span>
-                  <span className="font-medium text-gray-700">Human Capital</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-400">Join Date</span>
-                  <span className="font-medium text-gray-700">15 Mar 2021</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-400">Remaining Leave</span>
-                  <span className="font-medium text-green-600">8 days</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-400">Pending Task</span>
-                  <span className="font-medium text-amber-600">3</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <ProfileCard session={session} />
         </div>
 
         {/* Right Column */}
-        <div className="lg:col-span-2 space-y-5">
+        <div className="lg:col-span-2 space-y-3">
           {/* Charts Row */}
-          <div className="grid md:grid-cols-2 gap-5">
-            {/* Area Chart - Age & Gender */}
+          <div className="grid md:grid-cols-2 gap-3">
+            {/* Weekly Attendance Chart */}
             <Card>
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm font-semibold">Employees by Age & Gender</CardTitle>
-                  <Badge variant="soft" size="sm">7 groups</Badge>
+                  <CardTitle className="text-sm font-semibold">Weekly Attendance</CardTitle>
+                  <Badge variant="success" size="sm">+2.5%</Badge>
                 </div>
               </CardHeader>
               <CardContent>
-                <ResponsiveContainer width="100%" height={200}>
-                  <AreaChart data={ageGenderData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
-                    <defs>
-                      <linearGradient id="colorMale" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={CHART_COLORS.blue} stopOpacity={0.3} />
-                        <stop offset="95%" stopColor={CHART_COLORS.blue} stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="colorFemale" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={CHART_COLORS.pink} stopOpacity={0.3} />
-                        <stop offset="95%" stopColor={CHART_COLORS.pink} stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
-                    <XAxis dataKey="age" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                    <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <Legend wrapperStyle={{ fontSize: 10 }} />
-                    <Area
-                      type="monotone"
-                      dataKey="male"
-                      name="Male"
-                      stroke={CHART_COLORS.blue}
-                      fillOpacity={1}
-                      fill="url(#colorMale)"
-                      strokeWidth={2}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="female"
-                      name="Female"
-                      stroke={CHART_COLORS.pink}
-                      fillOpacity={1}
-                      fill="url(#colorFemale)"
-                      strokeWidth={2}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
+                {weeklyAttendance.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={weeklyAttendance} barCategoryGap="30%">
+                      <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
+                      <XAxis dataKey="day" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                      <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                      <Tooltip content={<CustomTooltip />} />
+                      <Bar dataKey="present" name="Present" fill={CHART_COLORS.green} radius={[4, 4, 0, 0]} maxBarSize={40} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="h-[200px] flex items-center justify-center text-gray-400 text-sm">No attendance data</div>
+                )}
               </CardContent>
             </Card>
 
-            {/* Pie Chart - Office Distribution */}
+            {/* Gender Ratio */}
             <Card>
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm font-semibold">Office Distribution</CardTitle>
-                  <Badge variant="soft" size="sm">2 locations</Badge>
+                  <CardTitle className="text-sm font-semibold">Gender Ratio</CardTitle>
+                  <Badge variant="soft" size="sm">{stats?.employees.total.toLocaleString() || 0} employees</Badge>
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="flex items-center">
-                  <ResponsiveContainer width="50%" height={180}>
-                    <PieChart>
-                      <Pie
-                        data={officeData}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={45}
-                        outerRadius={70}
-                        paddingAngle={2}
-                        dataKey="value"
-                      >
-                        <Cell fill={CHART_COLORS.blue} />
-                        <Cell fill={CHART_COLORS.violet} />
-                      </Pie>
-                      <Tooltip content={<CustomTooltip />} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div className="flex-1 space-y-3">
-                    {officeData.map((item, index) => (
-                      <div key={index} className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="w-2.5 h-2.5 rounded-full"
-                            style={{ backgroundColor: index === 0 ? CHART_COLORS.blue : CHART_COLORS.violet }}
-                          />
-                          <span className="text-sm text-gray-600">{item.name}</span>
-                        </div>
-                        <span className="text-sm font-semibold text-gray-900">{item.value}</span>
+                {genderRatioData.length > 0 ? (
+                  <div className="flex items-center justify-center gap-10 py-4">
+                    <div className="text-center group">
+                      <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center text-xl font-bold text-blue-600 group-hover:scale-105 transition-transform">
+                        {demographics?.male.percentage || 0}%
                       </div>
-                    ))}
+                      <p className="text-sm font-medium text-gray-700 mt-2">Male</p>
+                      <p className="text-xs text-gray-400">{demographics?.male.count} employees</p>
+                    </div>
+                    <div className="text-center group">
+                      <div className="w-16 h-16 rounded-full bg-pink-50 flex items-center justify-center text-xl font-bold text-pink-500 group-hover:scale-105 transition-transform">
+                        {demographics?.female.percentage || 0}%
+                      </div>
+                      <p className="text-sm font-medium text-gray-700 mt-2">Female</p>
+                      <p className="text-xs text-gray-400">{demographics?.female.count} employees</p>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="h-[150px] flex items-center justify-center text-gray-400 text-sm">No data available</div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -443,88 +583,21 @@ export default function DashboardPage() {
               </div>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={departmentData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" horizontal={false} />
-                  <XAxis type="number" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                  <YAxis
-                    dataKey="name"
-                    type="category"
-                    tick={{ fontSize: 10 }}
-                    tickLine={false}
-                    axisLine={false}
-                    width={60}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Bar
-                    dataKey="value"
-                    name="Employees"
-                    fill={CHART_COLORS.blue}
-                    radius={[0, 4, 4, 0]}
-                    barSize={20}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          {/* Gender Ratio & Weekly Attendance */}
-          <div className="grid md:grid-cols-2 gap-5">
-            {/* Gender Ratio */}
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm font-semibold">Gender Ratio</CardTitle>
-                  <Badge variant="soft" size="sm">1,132 employees</Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-center gap-10 py-4">
-                  <div className="text-center group">
-                    <div className="w-16 h-16 rounded-full bg-blue-50 flex items-center justify-center text-xl font-bold text-blue-600 group-hover:scale-105 transition-transform">
-                      79.2%
-                    </div>
-                    <p className="text-sm font-medium text-gray-700 mt-2">Male</p>
-                    <p className="text-xs text-gray-400">847 employees</p>
-                  </div>
-                  <div className="text-center group">
-                    <div className="w-16 h-16 rounded-full bg-pink-50 flex items-center justify-center text-xl font-bold text-pink-500 group-hover:scale-105 transition-transform">
-                      20.8%
-                    </div>
-                    <p className="text-sm font-medium text-gray-700 mt-2">Female</p>
-                    <p className="text-xs text-gray-400">285 employees</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Weekly Attendance */}
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm font-semibold">Weekly Attendance</CardTitle>
-                  <Badge variant="success" size="sm">+2.5%</Badge>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={150}>
-                  <BarChart data={attendanceData} barCategoryGap="30%">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" vertical={false} />
-                    <XAxis dataKey="day" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                    <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+              {departmentData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={180}>
+                  <BarChart data={departmentData} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                    <YAxis dataKey="name" type="category" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} width={60} />
                     <Tooltip content={<CustomTooltip />} />
-                    <Bar
-                      dataKey="present"
-                      name="Present"
-                      fill={CHART_COLORS.green}
-                      radius={[4, 4, 0, 0]}
-                      maxBarSize={40}
-                    />
+                    <Bar dataKey="value" name="Employees" fill={CHART_COLORS.blue} radius={[0, 4, 4, 0]} barSize={20} />
                   </BarChart>
                 </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
+              ) : (
+                <div className="h-[180px] flex items-center justify-center text-gray-400 text-sm">No department data</div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Recent Activity */}
           <Card>
@@ -538,7 +611,7 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="grid md:grid-cols-2 gap-2">
-                {activities.map(activity => <ActivityItem key={activity.id} activity={activity} />)}
+                {activities.map((activity) => <ActivityItem key={activity.id} activity={activity} />)}
               </div>
             </CardContent>
           </Card>

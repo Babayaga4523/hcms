@@ -1,13 +1,16 @@
 "use client";
 
 import * as React from "react";
+import { useSession } from "next-auth/react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Input, Select } from "@/components/ui/input";
 import { DataTable, Column } from "@/components/ui/data-table";
-import { Badge } from "@/components/ui/badge";
-import { Search, FileUp, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Search, FileUp, CheckCircle, XCircle, AlertCircle, Loader2 } from "lucide-react";
 
+// ============ Types ============
 interface AttendanceRecord {
   id: string;
   employeeId: string;
@@ -16,30 +19,148 @@ interface AttendanceRecord {
   shift: string;
   clockIn: string;
   clockOut: string;
-  status: "Present" | "Late" | "Absent" | "On Leave" | "Anomalous";
-  remarks: string;
+  status: "PRESENT" | "LATE" | "ABSENT" | "ON_LEAVE" | "ANOMALOUS" | "SICK" | "WFH" | "PERMIT";
+  remarks?: string;
 }
 
-const mockAttendance: AttendanceRecord[] = [
-  { id: "1", employeeId: "BNI0012", name: "Yoga Utama", date: "2026-05-20", shift: "Normal (08:00 - 17:00)", clockIn: "07:54", clockOut: "17:02", status: "Present", remarks: "" },
-  { id: "2", employeeId: "BNI0045", name: "Andi Wijaya", date: "2026-05-20", shift: "Normal (08:00 - 17:00)", clockIn: "08:15", clockOut: "17:00", status: "Late", remarks: "Traffic jam" },
-  { id: "3", employeeId: "BNI0089", name: "Siti Rahma", date: "2026-05-20", shift: "Normal (08:00 - 17:00)", clockIn: "08:00", clockOut: "--:--", status: "Anomalous", remarks: "Forgot clock-out" },
-  { id: "4", employeeId: "BNI0112", name: "Budi Santoso", date: "2026-05-20", shift: "Shift A (06:00 - 14:00)", clockIn: "05:50", clockOut: "14:05", status: "Present", remarks: "" },
-  { id: "5", employeeId: "BNI0154", name: "Rina Melati", date: "2026-05-20", shift: "Normal (08:00 - 17:00)", clockIn: "--:--", clockOut: "--:--", status: "On Leave", remarks: "Annual Leave" },
-  { id: "6", employeeId: "BNI0201", name: "Denny Hidayat", date: "2026-05-20", shift: "Normal (08:00 - 17:00)", clockIn: "--:--", clockOut: "--:--", status: "Absent", remarks: "No notice" },
-];
+interface AttendanceStats {
+  totalPresent: number;
+  lateCount: number;
+  absentCount: number;
+  anomalyCount: number;
+  totalEmployees: number;
+}
 
-export default function AttendancePage() {
-  const [search, setSearch] = React.useState("");
-  const [statusFilter, setStatusFilter] = React.useState("All");
+// ============ Status Mapping ============
+const statusLabels: Record<string, string> = {
+  PRESENT: "Present",
+  LATE: "Late",
+  ABSENT: "Absent",
+  ON_LEAVE: "On Leave",
+  ANOMALOUS: "Anomalous",
+  SICK: "Sick",
+  WFH: "WFH",
+  PERMIT: "Permit",
+};
 
-  const filteredData = mockAttendance.filter((row) => {
-    const matchesSearch = row.name.toLowerCase().includes(search.toLowerCase()) || 
-                          row.employeeId.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = statusFilter === "All" || row.status === statusFilter;
-    return matchesSearch && matchesStatus;
+const statusVariants: Record<string, "success" | "warning" | "danger" | "info" | "default"> = {
+  PRESENT: "success",
+  LATE: "warning",
+  ABSENT: "danger",
+  ON_LEAVE: "info",
+  ANOMALOUS: "warning",
+  SICK: "danger",
+  WFH: "info",
+  PERMIT: "info",
+};
+
+// ============ API Functions ============
+async function fetchAttendanceRecords(params: URLSearchParams): Promise<{
+  data: AttendanceRecord[];
+  pagination: { page: number; pageSize: number; total: number; totalPages: number };
+}> {
+  const response = await fetch(`/api/attendance?${params.toString()}`, {
+    credentials: "include",
   });
 
+  if (!response.ok) {
+    if (response.status === 401) {
+      window.location.href = "/login";
+    }
+    throw new Error("Failed to fetch attendance records");
+  }
+
+  return response.json();
+}
+
+async function fetchAttendanceStats(): Promise<AttendanceStats> {
+  const today = new Date().toISOString().split("T")[0];
+  const response = await fetch(`/api/attendance/stats?date=${today}`, {
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    // Return default stats if API doesn't exist
+    return {
+      totalPresent: 0,
+      lateCount: 0,
+      absentCount: 0,
+      anomalyCount: 0,
+      totalEmployees: 0,
+    };
+  }
+
+  const result = await response.json();
+  return result.data || {
+    totalPresent: 0,
+    lateCount: 0,
+    absentCount: 0,
+    anomalyCount: 0,
+    totalEmployees: 0,
+  };
+}
+
+// ============ Main Component ============
+export default function AttendancePage() {
+  const { data: session, status } = useSession();
+
+  const [records, setRecords] = React.useState<AttendanceRecord[]>([]);
+  const [stats, setStats] = React.useState<AttendanceStats | null>(null);
+  const [loading, setLoading] = React.useState(true);
+
+  const [search, setSearch] = React.useState("");
+  const [statusFilter, setStatusFilter] = React.useState("");
+  const [currentPage, setCurrentPage] = React.useState(1);
+  const [pageSize, setPageSize] = React.useState(10);
+  const [totalCount, setTotalCount] = React.useState(0);
+
+  // Fetch attendance data
+  React.useEffect(() => {
+    async function loadData() {
+      if (status !== "authenticated") return;
+
+      setLoading(true);
+
+      try {
+        const params = new URLSearchParams();
+        params.set("page", String(currentPage));
+        params.set("pageSize", String(pageSize));
+
+        if (search) params.set("search", search);
+        if (statusFilter) params.set("status", statusFilter);
+
+        const [recordsData, statsData] = await Promise.all([
+          fetchAttendanceRecords(params),
+          fetchAttendanceStats(),
+        ]);
+
+        // Transform data to match our interface
+        const transformedRecords = (recordsData.data || []).map((record: any) => ({
+          id: record.id,
+          employeeId: record.employee?.nik || record.employeeId,
+          name: record.employee ? `${record.employee.firstName} ${record.employee.lastName}` : "Unknown",
+          date: record.date,
+          shift: record.shift || "Normal (08:00 - 17:00)",
+          clockIn: record.clockIn ? new Date(record.clockIn).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "--:--",
+          clockOut: record.clockOut ? new Date(record.clockOut).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "--:--",
+          status: record.status,
+          remarks: record.notes,
+        }));
+
+        setRecords(transformedRecords);
+        setTotalCount(recordsData.pagination.total);
+        setStats(statsData);
+      } catch {
+        // Error is handled by state
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadData();
+  }, [status, currentPage, pageSize, search, statusFilter]);
+
+  // Table columns
   const columns: Column<AttendanceRecord>[] = [
     { key: "employeeId", header: "Employee ID", sortable: true },
     { key: "name", header: "Employee Name", sortable: true },
@@ -51,13 +172,8 @@ export default function AttendancePage() {
       key: "status",
       header: "Status",
       render: (row) => {
-        let variant: "success" | "warning" | "danger" | "info" | "default" = "default";
-        if (row.status === "Present") variant = "success";
-        else if (row.status === "Late") variant = "warning";
-        else if (row.status === "Absent") variant = "danger";
-        else if (row.status === "On Leave") variant = "info";
-        else if (row.status === "Anomalous") variant = "warning";
-        return <Badge variant={variant}>{row.status}</Badge>;
+        const variant = statusVariants[row.status] || "default";
+        return <Badge variant={variant}>{statusLabels[row.status] || row.status}</Badge>;
       },
     },
     { key: "remarks", header: "Remarks" },
@@ -66,7 +182,7 @@ export default function AttendancePage() {
       header: "Actions",
       render: (row) => (
         <div className="flex gap-2">
-          {row.status === "Anomalous" && (
+          {row.status === "ANOMALOUS" && (
             <Button size="sm" variant="primary" onClick={() => alert(`Adjust anomaly for ${row.name}`)}>
               Adjust
             </Button>
@@ -79,69 +195,91 @@ export default function AttendancePage() {
     },
   ];
 
+  if (status === "loading" || loading && records.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-4 w-64 mt-2" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-32" />
+          ))}
+        </div>
+        <Skeleton className="h-[400px] w-full" />
+      </div>
+    );
+  }
+
+  const presentPercentage = stats && stats.totalEmployees > 0
+    ? Math.round((stats.totalPresent / stats.totalEmployees) * 100)
+    : 0;
+
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-[#1A1A2E]">HC Attendance Monitor</h1>
-          <p className="text-sm text-[#6B7280]">
-            Monitor and adjust employee daily attendance records and check-in/out anomalies.
-          </p>
+          <h1 className="text-lg font-bold text-[#1A1A2E]">Attendance Monitor</h1>
+          <p className="text-xs text-[#6B7280]">Monitor and adjust employee attendance records</p>
         </div>
-        <div className="flex gap-3">
-          <Button variant="secondary" onClick={() => alert("Exporting to Excel...")}>
-            <FileUp className="h-4 w-4 mr-2" /> Export Excel
-          </Button>
-        </div>
+        <Button variant="secondary" size="sm" leftIcon={<FileUp className="h-4 w-4" />} onClick={() => alert("Exporting...")}>
+          Export
+        </Button>
       </div>
 
       {/* Attendance Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card className="shadow-card border-[#E5E7EB]">
-          <CardContent className="p-6 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-[#6B7280]">TOTAL PRESENT</p>
-              <h3 className="text-2xl font-bold text-[#1A1A2E] mt-1">456</h3>
-              <p className="text-xs text-[#10B981] mt-1">92.4% of total employees</p>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card className="!p-4">
+          <CardContent className="!p-0 flex items-center gap-3">
+            <div className="h-9 w-9 bg-green-100 rounded-lg flex items-center justify-center">
+              <CheckCircle className="h-5 w-5 text-green-600" />
             </div>
-            <div className="h-10 w-10 bg-[#DCFCE7] rounded-full flex items-center justify-center">
-              <CheckCircle className="h-5 w-5 text-[#10B981]" />
+            <div>
+              <p className="text-[10px] text-[#6B7280]">PRESENT</p>
+              <p className="text-lg font-bold text-[#1A1A2E]">{stats?.totalPresent || 0}</p>
             </div>
           </CardContent>
         </Card>
-        <Card className="shadow-card border-[#E5E7EB]">
-          <CardContent className="p-6 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-[#6B7280]">LATE CHECK-IN</p>
-              <h3 className="text-2xl font-bold text-[#1A1A2E] mt-1">12</h3>
-              <p className="text-xs text-[#F59E0B] mt-1">Requires follow-up</p>
+
+        <Card className="!p-4">
+          <CardContent className="!p-0 flex items-center gap-3">
+            <div className="h-9 w-9 bg-amber-100 rounded-lg flex items-center justify-center">
+              <AlertCircle className="h-5 w-5 text-amber-600" />
             </div>
-            <div className="h-10 w-10 bg-[#FEF9C3] rounded-full flex items-center justify-center">
-              <AlertCircle className="h-5 w-5 text-[#F59E0B]" />
+            <div>
+              <p className="text-[10px] text-[#6B7280]">LATE</p>
+              <p className="text-lg font-bold text-[#1A1A2E]">{stats?.lateCount || 0}</p>
             </div>
           </CardContent>
         </Card>
-        <Card className="shadow-card border-[#E5E7EB]">
-          <CardContent className="p-6 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-[#6B7280]">ABSENT / NO INFO</p>
-              <h3 className="text-2xl font-bold text-[#1A1A2E] mt-1">3</h3>
-              <p className="text-xs text-[#EF4444] mt-1">Unexcused leaves today</p>
+
+        <Card className="!p-4">
+          <CardContent className="!p-0 flex items-center gap-3">
+            <div className="h-9 w-9 bg-red-100 rounded-lg flex items-center justify-center">
+              <XCircle className="h-5 w-5 text-red-600" />
             </div>
-            <div className="h-10 w-10 bg-[#FEE2E2] rounded-full flex items-center justify-center">
-              <XCircle className="h-5 w-5 text-[#EF4444]" />
+            <div>
+              <p className="text-[10px] text-[#6B7280]">ABSENT</p>
+              <p className="text-lg font-bold text-[#1A1A2E]">{stats?.absentCount || 0}</p>
             </div>
           </CardContent>
         </Card>
-        <Card className="shadow-card border-[#E5E7EB]">
-          <CardContent className="p-6 flex items-center justify-between">
-            <div>
-              <p className="text-xs font-semibold text-[#6B7280]">ANOMALIES</p>
-              <h3 className="text-2xl font-bold text-[#1A1A2E] mt-1">8</h3>
-              <p className="text-xs text-[#EF4444] mt-1">Missing check-out stamps</p>
+
+        <Card className="!p-4">
+          <CardContent className="!p-0 flex items-center gap-3">
+            <div className="h-9 w-9 bg-orange-100 rounded-lg flex items-center justify-center">
+              <AlertCircle className="h-5 w-5 text-orange-600" />
             </div>
-            <div className="h-10 w-10 bg-[#FEE2E2] rounded-full flex items-center justify-center">
-              <AlertCircle className="h-5 w-5 text-[#EF4444]" />
+            <div>
+              <p className="text-[10px] text-[#6B7280]">ANOMALY</p>
+              <p className="text-lg font-bold text-[#1A1A2E]">{stats?.anomalyCount || 0}</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
             </div>
           </CardContent>
         </Card>
@@ -165,12 +303,12 @@ export default function AttendancePage() {
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
                 options={[
-                  { value: "All", label: "All Statuses" },
-                  { value: "Present", label: "Present" },
-                  { value: "Late", label: "Late" },
-                  { value: "Absent", label: "Absent" },
-                  { value: "On Leave", label: "On Leave" },
-                  { value: "Anomalous", label: "Anomalous" },
+                  { value: "", label: "All Statuses" },
+                  { value: "PRESENT", label: "Present" },
+                  { value: "LATE", label: "Late" },
+                  { value: "ABSENT", label: "Absent" },
+                  { value: "ON_LEAVE", label: "On Leave" },
+                  { value: "ANOMALOUS", label: "Anomalous" },
                 ]}
                 className="w-48"
               />
@@ -181,9 +319,20 @@ export default function AttendancePage() {
           </div>
 
           <DataTable
-            data={filteredData}
+            data={records}
             columns={columns}
             keyExtractor={(row) => row.id}
+            pagination={{
+              page: currentPage,
+              pageSize,
+              total: totalCount,
+              onPageChange: setCurrentPage,
+              onPageSizeChange: (size) => {
+                setPageSize(size);
+                setCurrentPage(1);
+              },
+            }}
+            isLoading={loading}
           />
         </CardContent>
       </Card>

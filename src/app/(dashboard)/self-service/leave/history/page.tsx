@@ -1,111 +1,111 @@
 "use client";
 
 import * as React from "react";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { useSession } from "next-auth/react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Select } from "@/components/ui/input";
 import { DataTable, Column } from "@/components/ui/data-table";
-import { Modal } from "@/components/ui/modal";
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Eye, CheckCircle, XCircle, FileText, Clock } from "lucide-react";
 import { format } from "date-fns";
-import { id } from "date-fns/locale";
-import {
-  Filter,
-  Download,
-  Eye,
-  CheckCircle,
-  XCircle,
-  Clock,
-  Calendar,
-  FileText,
-  User,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
 
-// Mock data
-const mockLeaveHistory = [
-  {
-    id: "1",
-    leaveType: { id: "1", code: "ANNUAL", name: "Annual Leave" },
-    startDate: new Date("2026-05-10"),
-    endDate: new Date("2026-05-14"),
-    totalDays: 5,
-    reason: "Family vacation to Bali",
-    status: "APPROVED",
-    approvedBy: "Joko Susilo",
-    approvedAt: new Date("2026-05-08"),
-    createdAt: new Date("2026-05-05"),
-  },
-  {
-    id: "2",
-    leaveType: { id: "2", code: "SICK", name: "Sick Leave" },
-    startDate: new Date("2026-04-15"),
-    endDate: new Date("2026-04-15"),
-    totalDays: 1,
-    reason: "Health check-up at hospital",
-    status: "APPROVED",
-    approvedBy: "Joko Susilo",
-    approvedAt: new Date("2026-04-14"),
-    createdAt: new Date("2026-04-14"),
-  },
-  {
-    id: "3",
-    leaveType: { id: "1", code: "ANNUAL", name: "Annual Leave" },
-    startDate: new Date("2026-03-20"),
-    endDate: new Date("2026-03-22"),
-    totalDays: 3,
-    reason: "Personal matters - moving house",
-    status: "APPROVED",
-    approvedBy: "Joko Susilo",
-    approvedAt: new Date("2026-03-18"),
-    createdAt: new Date("2026-03-15"),
-  },
-  {
-    id: "4",
-    leaveType: { id: "1", code: "ANNUAL", name: "Annual Leave" },
-    startDate: new Date("2026-06-01"),
-    endDate: new Date("2026-06-05"),
-    totalDays: 5,
-    reason: "Wedding attendance of family member",
-    status: "PENDING",
-    approvedBy: null,
-    approvedAt: null,
-    createdAt: new Date("2026-05-18"),
-  },
-  {
-    id: "5",
-    leaveType: { id: "3", code: "PERSONAL", name: "Personal Leave" },
-    startDate: new Date("2026-02-10"),
-    endDate: new Date("2026-02-10"),
-    totalDays: 1,
-    reason: "Family emergency",
-    status: "REJECTED",
-    approvedBy: "Joko Susilo",
-    approvedAt: new Date("2026-02-09"),
-    createdAt: new Date("2026-02-08"),
-    notes: "Sorry, this date has already been approved for another team member",
-  },
-  {
-    id: "6",
-    leaveType: { id: "2", code: "SICK", name: "Sick Leave" },
-    startDate: new Date("2026-01-20"),
-    endDate: new Date("2026-01-20"),
-    totalDays: 1,
-    reason: "Flu and fever",
-    status: "APPROVED",
-    approvedBy: "Joko Susilo",
-    approvedAt: new Date("2026-01-20"),
-    createdAt: new Date("2026-01-20"),
-  },
-];
+// ============ Types ============
+interface LeaveRecord {
+  id: string;
+  leaveType: { id: string; code: string; name: string };
+  startDate: string;
+  endDate: string;
+  totalDays: number;
+  reason?: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+  approvedBy?: string;
+  approvedAt?: string;
+  notes?: string;
+  createdAt: string;
+}
 
-// Status Summary Component
-function StatusSummary() {
+interface LeaveQuota {
+  leaveType: { id: string; code: string; name: string };
+  totalDays: number;
+  usedDays: number;
+  remainingDays: number;
+}
+
+// ============ Status Mapping ============
+const statusLabels: Record<string, string> = {
+  PENDING: "Pending",
+  APPROVED: "Approved",
+  REJECTED: "Rejected",
+  CANCELLED: "Cancelled",
+};
+
+const statusVariants: Record<string, "warning" | "success" | "danger" | "default"> = {
+  PENDING: "warning",
+  APPROVED: "success",
+  REJECTED: "danger",
+  CANCELLED: "default",
+};
+
+// ============ API Functions ============
+async function fetchLeaveHistory(employeeId: string): Promise<LeaveRecord[]> {
+  const response = await fetch(`/api/leave?employeeId=${employeeId}`, {
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      window.location.href = "/login";
+    }
+    return [];
+  }
+
+  const result = await response.json();
+  return result.data || [];
+}
+
+async function fetchLeaveQuotas(employeeId: string): Promise<LeaveQuota[]> {
+  const currentYear = new Date().getFullYear();
+  const response = await fetch(`/api/leave/quota?employeeId=${employeeId}&year=${currentYear}`, {
+    credentials: "include",
+  });
+
+  if (!response.ok) return [];
+
+  const result = await response.json();
+  return result.data || [];
+}
+
+async function createLeaveRequest(data: {
+  leaveTypeId: string;
+  startDate: string;
+  endDate: string;
+  reason: string;
+  attachmentUrl?: string;
+}): Promise<LeaveRecord | null> {
+  const response = await fetch("/api/leave", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const result = await response.json();
+    throw new Error(result.error || "Failed to submit leave request");
+  }
+
+  const result = await response.json();
+  return result.data;
+}
+
+// ============ Status Summary Component ============
+function StatusSummary({ records }: { records: LeaveRecord[] }) {
   const summary = {
-    pending: mockLeaveHistory.filter((l) => l.status === "PENDING").length,
-    approved: mockLeaveHistory.filter((l) => l.status === "APPROVED").length,
-    rejected: mockLeaveHistory.filter((l) => l.status === "REJECTED").length,
-    cancelled: mockLeaveHistory.filter((l) => l.status === "CANCELLED").length,
+    pending: records.filter((l) => l.status === "PENDING").length,
+    approved: records.filter((l) => l.status === "APPROVED").length,
+    rejected: records.filter((l) => l.status === "REJECTED").length,
+    total: records.length,
   };
 
   return (
@@ -134,7 +134,7 @@ function StatusSummary() {
       <div className="flex items-center gap-3 p-4 bg-gray-100 rounded-lg">
         <FileText className="h-8 w-8 text-[#6B7280]" />
         <div>
-          <p className="text-2xl font-bold text-[#1A1A2E]">{mockLeaveHistory.length}</p>
+          <p className="text-2xl font-bold text-[#1A1A2E]">{summary.total}</p>
           <p className="text-sm text-[#6B7280]">Total</p>
         </div>
       </div>
@@ -142,153 +142,66 @@ function StatusSummary() {
   );
 }
 
-// Detail Modal Component
-function LeaveDetailModal({
-  leave,
-  open,
-  onClose,
-}: {
-  leave: (typeof mockLeaveHistory)[0] | null;
-  open: boolean;
-  onClose: () => void;
-}) {
-  if (!leave) return null;
-
-  return (
-    <Modal open={open} onClose={onClose} title="Leave Request Details" maxWidth="md">
-      <div className="space-y-6">
-        {/* Status Banner */}
-        <div
-          className={cn(
-            "flex items-center gap-3 p-4 rounded-lg",
-            leave.status === "APPROVED" && "bg-[#ECFDF5]",
-            leave.status === "PENDING" && "bg-[#FEF9C3]",
-            leave.status === "REJECTED" && "bg-[#FEE2E2]",
-            leave.status === "CANCELLED" && "bg-gray-100"
-          )}
-        >
-          {leave.status === "APPROVED" && (
-            <CheckCircle className="h-6 w-6 text-[#10B981]" />
-          )}
-          {leave.status === "PENDING" && (
-            <Clock className="h-6 w-6 text-[#F59E0B]" />
-          )}
-          {leave.status === "REJECTED" && (
-            <XCircle className="h-6 w-6 text-[#EF4444]" />
-          )}
-          <div>
-            <p className="font-semibold text-[#1A1A2E]">
-              {leave.status === "APPROVED" && "Request Approved"}
-              {leave.status === "PENDING" && "Request Pending Approval"}
-              {leave.status === "REJECTED" && "Request Rejected"}
-              {leave.status === "CANCELLED" && "Request Cancelled"}
-            </p>
-            <p className="text-sm text-[#6B7280]">
-              Submitted on {format(leave.createdAt, "dd MMMM yyyy, HH:mm", { locale: id })}
-            </p>
-          </div>
-        </div>
-
-        {/* Details Grid */}
-        <div className="grid grid-cols-2 gap-6">
-          <div>
-            <p className="text-sm text-[#6B7280] mb-1">Leave Type</p>
-            <p className="font-medium text-[#1A1A2E]">{leave.leaveType.name}</p>
-          </div>
-          <div>
-            <p className="text-sm text-[#6B7280] mb-1">Total Days</p>
-            <p className="font-medium text-[#1A1A2E]">{leave.totalDays} days</p>
-          </div>
-          <div>
-            <p className="text-sm text-[#6B7280] mb-1">Start Date</p>
-            <p className="font-medium text-[#1A1A2E]">
-              {format(leave.startDate, "dd MMMM yyyy", { locale: id })}
-            </p>
-          </div>
-          <div>
-            <p className="text-sm text-[#6B7280] mb-1">End Date</p>
-            <p className="font-medium text-[#1A1A2E]">
-              {format(leave.endDate, "dd MMMM yyyy", { locale: id })}
-            </p>
-          </div>
-          <div className="col-span-2">
-            <p className="text-sm text-[#6B7280] mb-1">Reason</p>
-            <p className="font-medium text-[#1A1A2E]">{leave.reason}</p>
-          </div>
-          {leave.approvedBy && (
-            <>
-              <div>
-                <p className="text-sm text-[#6B7280] mb-1">Processed By</p>
-                <p className="font-medium text-[#1A1A2E]">{leave.approvedBy}</p>
-              </div>
-              <div>
-                <p className="text-sm text-[#6B7280] mb-1">Processed At</p>
-                <p className="font-medium text-[#1A1A2E]">
-                  {format(leave.approvedAt!, "dd MMMM yyyy, HH:mm", { locale: id })}
-                </p>
-              </div>
-            </>
-          )}
-          {leave.notes && (
-            <div className="col-span-2">
-              <p className="text-sm text-[#6B7280] mb-1">
-                {leave.status === "REJECTED" ? "Rejection Reason" : "Notes"}
-              </p>
-              <p className="font-medium text-[#1A1A2E]">{leave.notes}</p>
-            </div>
-          )}
-        </div>
-
-        {/* Actions */}
-        {leave.status === "PENDING" && (
-          <div className="flex justify-end gap-3 pt-4 border-t border-[#E5E7EB]">
-            <Button variant="danger" onClick={() => console.log("Cancel", leave.id)}>
-              Cancel Request
-            </Button>
-          </div>
-        )}
-      </div>
-    </Modal>
-  );
-}
-
-// Main Page Component
+// ============ Main Page Component ============
 export default function LeaveHistoryPage() {
+  const { data: session, status } = useSession();
+
+  const [records, setRecords] = React.useState<LeaveRecord[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
   const [statusFilter, setStatusFilter] = React.useState("");
   const [leaveTypeFilter, setLeaveTypeFilter] = React.useState("");
-  const [dateRange, setDateRange] = React.useState({
-    start: "",
-    end: "",
-  });
+  const [dateRange, setDateRange] = React.useState({ start: "", end: "" });
   const [currentPage, setCurrentPage] = React.useState(1);
   const [pageSize, setPageSize] = React.useState(10);
-  const [selectedLeave, setSelectedLeave] = React.useState<(typeof mockLeaveHistory)[0] | null>(null);
+  const [selectedLeave, setSelectedLeave] = React.useState<LeaveRecord | null>(null);
+
+  // Fetch leave history
+  React.useEffect(() => {
+    async function loadData() {
+      if (status !== "authenticated" || !session?.user?.employeeId) return;
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const data = await fetchLeaveHistory(session.user.employeeId);
+        setRecords(data);
+      } catch (err) {
+        setError("Failed to load leave history");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadData();
+  }, [status, session]);
 
   // Filter data
-  const filteredHistory = mockLeaveHistory.filter((leave) => {
-    const matchesStatus = statusFilter === "" || leave.status === statusFilter;
-    const matchesLeaveType =
-      leaveTypeFilter === "" || leave.leaveType.id === leaveTypeFilter;
+  const filteredRecords = records.filter((leave) => {
+    const matchesStatus = !statusFilter || leave.status === statusFilter;
+    const matchesLeaveType = !leaveTypeFilter || leave.leaveType.id === leaveTypeFilter;
 
     let matchesDate = true;
     if (dateRange.start) {
-      matchesDate = leave.startDate >= new Date(dateRange.start);
+      matchesDate = new Date(leave.startDate) >= new Date(dateRange.start);
     }
     if (dateRange.end) {
-      matchesDate = matchesDate && leave.endDate <= new Date(dateRange.end);
+      matchesDate = matchesDate && new Date(leave.endDate) <= new Date(dateRange.end);
     }
 
     return matchesStatus && matchesLeaveType && matchesDate;
   });
 
   // Pagination
-  const paginatedHistory = filteredHistory.slice(
+  const paginatedRecords = filteredRecords.slice(
     (currentPage - 1) * pageSize,
     currentPage * pageSize
   );
 
   // Table columns
-  const columns: Column<(typeof mockLeaveHistory)[0]>[] = [
+  const columns: Column<LeaveRecord>[] = [
     {
       key: "leaveType",
       header: "Leave Type",
@@ -305,7 +218,7 @@ export default function LeaveHistoryPage() {
       render: (row) => (
         <div>
           <p className="text-sm">
-            {format(row.startDate, "dd/MM/yyyy")} - {format(row.endDate, "dd/MM/yyyy")}
+            {format(new Date(row.startDate), "dd/MM/yyyy")} - {format(new Date(row.endDate), "dd/MM/yyyy")}
           </p>
           <p className="text-xs text-[#6B7280]">{row.totalDays} days</p>
         </div>
@@ -315,15 +228,19 @@ export default function LeaveHistoryPage() {
       key: "reason",
       header: "Reason",
       render: (row) => (
-        <p className="text-sm truncate max-w-[200px]" title={row.reason}>
-          {row.reason}
+        <p className="text-sm truncate max-w-[200px]" title={row.reason || ""}>
+          {row.reason || "-"}
         </p>
       ),
     },
     {
       key: "status",
       header: "Status",
-      render: (row) => <Badge status={row.status}>{row.status}</Badge>,
+      render: (row) => (
+        <Badge variant={statusVariants[row.status] || "default"} status={row.status}>
+          {statusLabels[row.status] || row.status}
+        </Badge>
+      ),
     },
     {
       key: "approvedBy",
@@ -347,20 +264,31 @@ export default function LeaveHistoryPage() {
     },
   ];
 
+  if (status === "loading" || (loading && records.length === 0)) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <Skeleton className="h-8 w-48" />
+          <Skeleton className="h-4 w-64 mt-2" />
+        </div>
+        <div className="grid grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-20" />)}
+        </div>
+        <Skeleton className="h-[400px] w-full" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-[#1A1A2E]">Leave History</h1>
-          <p className="text-sm text-[#6B7280]">
-            View and track all your leave requests
-          </p>
-        </div>
+      <div>
+        <h1 className="text-2xl font-bold text-[#1A1A2E]">Leave History</h1>
+        <p className="text-sm text-[#6B7280]">View and track all your leave requests</p>
       </div>
 
       {/* Status Summary */}
-      <StatusSummary />
+      <StatusSummary records={records} />
 
       {/* Filters */}
       <Card>
@@ -371,7 +299,6 @@ export default function LeaveHistoryPage() {
               value={dateRange.start}
               onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
               className="px-3 py-2 border border-[#E5E7EB] rounded-lg text-sm"
-              placeholder="Start Date"
             />
             <span className="text-[#6B7280]">to</span>
             <input
@@ -379,7 +306,6 @@ export default function LeaveHistoryPage() {
               value={dateRange.end}
               onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
               className="px-3 py-2 border border-[#E5E7EB] rounded-lg text-sm"
-              placeholder="End Date"
             />
             <select
               value={leaveTypeFilter}
@@ -402,11 +328,8 @@ export default function LeaveHistoryPage() {
               <option value="REJECTED">Rejected</option>
               <option value="CANCELLED">Cancelled</option>
             </select>
-            <Button variant="secondary" leftIcon={<Filter className="h-4 w-4" />}>
+            <Button variant="secondary" onClick={() => {}}>
               Filter
-            </Button>
-            <Button variant="ghost" leftIcon={<Download className="h-4 w-4" />}>
-              Export
             </Button>
           </div>
         </CardContent>
@@ -416,31 +339,26 @@ export default function LeaveHistoryPage() {
       <Card>
         <CardContent className="p-0">
           <DataTable
-            data={paginatedHistory}
+            data={paginatedRecords}
             columns={columns}
             keyExtractor={(row) => row.id}
             pagination={{
               page: currentPage,
               pageSize,
-              total: filteredHistory.length,
+              total: filteredRecords.length,
               onPageChange: setCurrentPage,
               onPageSizeChange: (size) => {
                 setPageSize(size);
                 setCurrentPage(1);
               },
             }}
+            isLoading={loading}
+            emptyMessage="No leave records found"
             striped
             stickyHeader
           />
         </CardContent>
       </Card>
-
-      {/* Detail Modal */}
-      <LeaveDetailModal
-        leave={selectedLeave}
-        open={selectedLeave !== null}
-        onClose={() => setSelectedLeave(null)}
-      />
     </div>
   );
 }

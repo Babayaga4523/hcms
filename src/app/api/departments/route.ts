@@ -1,17 +1,26 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { apiErrorHandler } from "@/lib/logger";
 import {
   successResponse,
   createdResponse,
   errorResponse,
-  notFoundResponse,
   paginatedResponse,
   getPaginationParams,
+  unauthorizedResponse,
 } from "@/lib/api-utils";
+import { revalidateReferenceData, revalidateDashboard } from "@/lib/revalidate";
 
 // GET /api/departments - List departments
 export async function GET(request: NextRequest) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const { searchParams } = new URL(request.url);
     const { page, pageSize, skip } = getPaginationParams(searchParams);
 
@@ -42,14 +51,23 @@ export async function GET(request: NextRequest) {
 
     return paginatedResponse(departments, page, pageSize, total);
   } catch (error) {
-    console.error("Error fetching departments:", error);
-    return errorResponse("Failed to fetch departments", 500);
+    const { message } = apiErrorHandler("Fetching departments", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }
 
 // POST /api/departments - Create department
 export async function POST(request: NextRequest) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const body = await request.json();
 
     if (!body.code || !body.name) {
@@ -72,9 +90,16 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Invalidate reference data and dashboard caches
+    await revalidateReferenceData();
+    await revalidateDashboard();
+
     return createdResponse(department, "Department created successfully");
   } catch (error) {
-    console.error("Error creating department:", error);
-    return errorResponse("Failed to create department", 500);
+    const { message } = apiErrorHandler("Creating department", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }

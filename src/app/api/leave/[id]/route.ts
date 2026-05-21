@@ -1,24 +1,26 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { apiErrorHandler } from "@/lib/logger";
 import {
   successResponse,
-  notFoundResponse,
   errorResponse,
 } from "@/lib/api-utils";
 import { LeaveStatus } from "@prisma/client";
-
-interface RouteParams {
-  params: Promise<{
-    id: string;
-  }>;
-}
+import { revalidateLeave, revalidateLeaveQuota, revalidateDashboard } from "@/lib/revalidate";
 
 // GET /api/leave/[id] - Get a single leave request detail
 export async function GET(
   request: NextRequest,
-  { params }: RouteParams
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return errorResponse("Authentication required", 401);
+    }
+
     const { id } = await params;
 
     const leave = await prisma.leave.findUnique({
@@ -41,22 +43,31 @@ export async function GET(
     });
 
     if (!leave) {
-      return notFoundResponse("Leave request not found");
+      return errorResponse("Leave request not found", 404);
     }
 
     return successResponse(leave);
   } catch (error) {
-    console.error("Error fetching leave request:", error);
-    return errorResponse("Failed to fetch leave request", 500);
+    const { message } = apiErrorHandler("Fetching leave request", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }
 
 // PATCH /api/leave/[id] - Update leave request status (Approve/Reject)
 export async function PATCH(
   request: NextRequest,
-  { params }: RouteParams
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return errorResponse("Authentication required", 401);
+    }
+
     const { id } = await params;
     const body = await request.json();
 
@@ -73,17 +84,17 @@ export async function PATCH(
     });
 
     if (!existingLeave) {
-      return notFoundResponse("Leave request not found");
+      return errorResponse("Leave request not found", 404);
     }
 
-    // Prevent re-processing already approved/rejected requests to avoid duplicate calculations
+    // Prevent re-processing already approved/rejected requests
     if (existingLeave.status !== "PENDING") {
       return errorResponse(`Leave request has already been processed with status: ${existingLeave.status}`, 400);
     }
 
-    // Execute in a transaction for atomicity and data safety
+    // Execute in a transaction for atomicity
     const updatedLeave = await prisma.$transaction(async (tx) => {
-      // 1. If status is APPROVED, subtract the leave days from the employee's LeaveQuota
+      // If status is APPROVED, subtract the leave days from the employee's LeaveQuota
       if (status === "APPROVED") {
         const leaveYear = new Date(existingLeave.startDate).getFullYear();
 
@@ -105,7 +116,7 @@ export async function PATCH(
             throw new Error(`Insufficient leave quota. Remaining: ${remainingDays} days, Requested: ${existingLeave.totalDays} days.`);
           }
 
-          // Deduct from quota (increment usedDays)
+          // Deduct from quota
           await tx.leaveQuota.update({
             where: { id: quota.id },
             data: {
@@ -117,7 +128,7 @@ export async function PATCH(
         }
       }
 
-      // 2. Update the Leave request status
+      // Update the Leave request status
       return await tx.leave.update({
         where: { id },
         data: {
@@ -142,10 +153,17 @@ export async function PATCH(
       });
     });
 
+    // Invalidate leave caches, quota, and dashboard stats
+    await revalidateLeave(id);
+    await revalidateLeaveQuota();
+    await revalidateDashboard();
+
     return successResponse(updatedLeave, `Leave request status successfully updated to ${status}`);
   } catch (error) {
-    const err = error as Error;
-    console.error("Error processing leave patch transaction:", err);
-    return errorResponse(err.message || "Failed to process leave request", 500);
+    const { message } = apiErrorHandler("Processing leave approval", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }

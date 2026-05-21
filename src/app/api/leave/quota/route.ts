@@ -1,17 +1,27 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { apiErrorHandler } from "@/lib/logger";
 import {
   successResponse,
   errorResponse,
   notFoundResponse,
   paginatedResponse,
   getPaginationParams,
+  unauthorizedResponse,
 } from "@/lib/api-utils";
 import { Prisma } from "@prisma/client";
+import { revalidateLeaveQuota } from "@/lib/revalidate";
 
 // GET /api/leave/quota - Get leave quotas
 export async function GET(request: NextRequest) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const { searchParams } = new URL(request.url);
     const { page, pageSize, skip } = getPaginationParams(searchParams);
 
@@ -71,14 +81,23 @@ export async function GET(request: NextRequest) {
 
     return paginatedResponse(quotas, page, pageSize, total);
   } catch (error) {
-    console.error("Error fetching leave quotas:", error);
-    return errorResponse("Failed to fetch leave quotas", 500);
+    const { message } = apiErrorHandler("Fetching leave quotas", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }
 
-// PUT /api/leave/quota - Update leave quota (approve leave and update used days)
+// PUT /api/leave/quota - Update leave quota
 export async function PUT(request: NextRequest) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const body = await request.json();
 
     if (!body.id) {
@@ -113,9 +132,15 @@ export async function PUT(request: NextRequest) {
       },
     });
 
+    // Invalidate leave quota cache
+    await revalidateLeaveQuota();
+
     return successResponse(updatedQuota, "Leave quota updated successfully");
   } catch (error) {
-    console.error("Error updating leave quota:", error);
-    return errorResponse("Failed to update leave quota", 500);
+    const { message } = apiErrorHandler("Updating leave quota", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }

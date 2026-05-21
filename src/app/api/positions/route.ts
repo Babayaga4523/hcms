@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { apiErrorHandler } from "@/lib/logger";
 import {
   successResponse,
   createdResponse,
@@ -7,11 +9,19 @@ import {
   notFoundResponse,
   paginatedResponse,
   getPaginationParams,
+  unauthorizedResponse,
 } from "@/lib/api-utils";
+import { revalidateReferenceData } from "@/lib/revalidate";
 
 // GET /api/positions - List positions
 export async function GET(request: NextRequest) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const { searchParams } = new URL(request.url);
     const { page, pageSize, skip } = getPaginationParams(searchParams);
 
@@ -57,14 +67,23 @@ export async function GET(request: NextRequest) {
 
     return paginatedResponse(positions, page, pageSize, total);
   } catch (error) {
-    console.error("Error fetching positions:", error);
-    return errorResponse("Failed to fetch positions", 500);
+    const { message } = apiErrorHandler("Fetching positions", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }
 
 // POST /api/positions - Create position
 export async function POST(request: NextRequest) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const body = await request.json();
 
     if (!body.code || !body.name || !body.divisionId) {
@@ -102,9 +121,15 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Invalidate reference data cache
+    await revalidateReferenceData();
+
     return createdResponse(position, "Position created successfully");
   } catch (error) {
-    console.error("Error creating position:", error);
-    return errorResponse("Failed to create position", 500);
+    const { message } = apiErrorHandler("Creating position", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }

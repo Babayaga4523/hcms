@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { apiErrorHandler } from "@/lib/logger";
 import {
   successResponse,
   createdResponse,
@@ -7,12 +9,20 @@ import {
   notFoundResponse,
   paginatedResponse,
   getPaginationParams,
+  unauthorizedResponse,
 } from "@/lib/api-utils";
 import { Prisma, AttendanceStatus } from "@prisma/client";
+import { revalidateAttendance, revalidateDashboard } from "@/lib/revalidate";
 
 // GET /api/attendance - List attendance records
 export async function GET(request: NextRequest) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const { searchParams } = new URL(request.url);
     const { page, pageSize, skip } = getPaginationParams(searchParams);
 
@@ -76,14 +86,23 @@ export async function GET(request: NextRequest) {
 
     return paginatedResponse(attendances, page, pageSize, total);
   } catch (error) {
-    console.error("Error fetching attendances:", error);
-    return errorResponse("Failed to fetch attendances", 500);
+    const { message } = apiErrorHandler("Fetching attendance records", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }
 
 // POST /api/attendance - Clock in or out
 export async function POST(request: NextRequest) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const body = await request.json();
 
     // Validate required fields
@@ -118,7 +137,6 @@ export async function POST(request: NextRequest) {
           where: { id: existingAttendance.id },
           data: {
             clockOut: new Date(),
-            // Calculate duration
           },
           include: {
             employee: {
@@ -131,6 +149,10 @@ export async function POST(request: NextRequest) {
             },
           },
         });
+        // Invalidate attendance and dashboard caches
+        await revalidateAttendance();
+        await revalidateDashboard();
+
         return successResponse(updatedAttendance, "Clock out recorded successfully");
       } else {
         return errorResponse("Already clocked out today", 400);
@@ -164,9 +186,16 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Invalidate attendance and dashboard caches
+    await revalidateAttendance();
+    await revalidateDashboard();
+
     return createdResponse(attendance, "Clock in recorded successfully");
   } catch (error) {
-    console.error("Error recording attendance:", error);
-    return errorResponse("Failed to record attendance", 500);
+    const { message } = apiErrorHandler("Recording attendance", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }

@@ -1,22 +1,56 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Select, Textarea } from "@/components/ui/input";
-import { FileUp, AlertCircle } from "lucide-react";
+import { FileUp, AlertCircle, Loader2 } from "lucide-react";
 
 export default function CaretakerResignRequestPage() {
+  const router = useRouter();
   const [formData, setFormData] = React.useState({
     employeeId: "",
     resignDate: "",
     reasonType: "",
     remarks: "",
   });
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("Submit Caretaker Resign", formData);
+    setError(null);
+    setLoading(true);
+
+    try {
+      const response = await fetch("/api/resign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          employeeId: formData.employeeId,
+          resignDate: formData.resignDate,
+          reason: formData.reasonType,
+          category: "INVOLUNTARY",
+          notes: formData.remarks,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to submit resignation request");
+      }
+
+      // Redirect to history page on success
+      router.push("/caretaker-resign/history");
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -27,6 +61,12 @@ export default function CaretakerResignRequestPage() {
           Submit a resignation request on behalf of an employee (Caretaker)
         </p>
       </div>
+
+      {error && (
+        <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-600 text-sm">
+          {error}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2">
@@ -94,7 +134,7 @@ export default function CaretakerResignRequestPage() {
                       <span className="relative cursor-pointer rounded-md font-medium text-[#1A2B6B] focus-within:outline-none hover:underline">
                         Upload a file
                       </span>
-                      <p className="pl-1">or drag and drop</p>
+                      <span className="pl-1">or drag and drop</span>
                     </div>
                     <p className="text-xs text-[#6B7280]">PDF or JPG up to 5MB</p>
                   </div>
@@ -102,11 +142,18 @@ export default function CaretakerResignRequestPage() {
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t border-[#E5E7EB] mt-6">
-                <Button variant="secondary" type="button">
+                <Button variant="secondary" type="button" onClick={() => router.back()}>
                   Cancel
                 </Button>
-                <Button variant="primary" type="submit" className="bg-[#EF4444] hover:bg-[#DC2626]">
-                  Submit Resignation
+                <Button variant="primary" type="submit" disabled={loading}>
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Submitting...
+                    </>
+                  ) : (
+                    "Submit Resignation"
+                  )}
                 </Button>
               </div>
             </form>

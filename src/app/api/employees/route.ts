@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { apiErrorHandler } from "@/lib/logger";
 import {
   successResponse,
   createdResponse,
@@ -7,12 +9,20 @@ import {
   notFoundResponse,
   paginatedResponse,
   getPaginationParams,
+  unauthorizedResponse,
 } from "@/lib/api-utils";
 import { Prisma, EmployeeStatus, Gender } from "@prisma/client";
+import { revalidateAfterEmployeeChange } from "@/lib/revalidate";
 
 // GET /api/employees - List employees with filters and pagination
 export async function GET(request: NextRequest) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const { searchParams } = new URL(request.url);
     const { page, pageSize, skip } = getPaginationParams(searchParams);
 
@@ -91,18 +101,39 @@ export async function GET(request: NextRequest) {
 
     return paginatedResponse(employees, page, pageSize, total);
   } catch (error) {
-    console.error("Error fetching employees:", error);
-    return errorResponse("Failed to fetch employees", 500);
+    const { message } = apiErrorHandler("Fetching employees", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }
 
 // POST /api/employees - Create new employee
 export async function POST(request: NextRequest) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const body = await request.json();
 
     // Validate required fields
-    const requiredFields = ["nik", "email", "firstName", "lastName", "gender", "birthDate", "positionId", "divisionId", "departmentId", "joinDate"];
+    const requiredFields = [
+      "nik",
+      "email",
+      "firstName",
+      "lastName",
+      "gender",
+      "birthDate",
+      "positionId",
+      "divisionId",
+      "departmentId",
+      "joinDate",
+    ];
+
     for (const field of requiredFields) {
       if (!body[field]) {
         return errorResponse(`Missing required field: ${field}`, 400);
@@ -131,7 +162,7 @@ export async function POST(request: NextRequest) {
         phone: body.phone,
         address: body.address,
         positionId: body.positionId,
-        divisionId: body.divisionId,
+        divisionId: body.divisonId,
         departmentId: body.departmentId,
         joinDate: new Date(body.joinDate),
         status: body.status || "ACTIVE",
@@ -147,9 +178,15 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Invalidate employee list and dashboard caches
+    await revalidateAfterEmployeeChange();
+
     return createdResponse(employee, "Employee created successfully");
   } catch (error) {
-    console.error("Error creating employee:", error);
-    return errorResponse("Failed to create employee", 500);
+    const { message } = apiErrorHandler("Creating employee", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }

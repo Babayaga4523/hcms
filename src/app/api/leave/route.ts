@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { apiErrorHandler } from "@/lib/logger";
 import {
   successResponse,
   createdResponse,
@@ -7,13 +9,21 @@ import {
   notFoundResponse,
   paginatedResponse,
   getPaginationParams,
+  unauthorizedResponse,
 } from "@/lib/api-utils";
 import { Prisma, LeaveStatus } from "@prisma/client";
 import { addDays, differenceInBusinessDays } from "date-fns";
+import { revalidateLeaves, revalidateLeaveQuota, revalidateDashboard } from "@/lib/revalidate";
 
 // GET /api/leave - List leave requests
 export async function GET(request: NextRequest) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const { searchParams } = new URL(request.url);
     const { page, pageSize, skip } = getPaginationParams(searchParams);
 
@@ -84,14 +94,23 @@ export async function GET(request: NextRequest) {
 
     return paginatedResponse(leaves, page, pageSize, total);
   } catch (error) {
-    console.error("Error fetching leaves:", error);
-    return errorResponse("Failed to fetch leaves", 500);
+    const { message } = apiErrorHandler("Fetching leave requests", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }
 
 // POST /api/leave - Create new leave request
 export async function POST(request: NextRequest) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const body = await request.json();
 
     // Validate required fields
@@ -166,9 +185,17 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Invalidate leave-related caches and dashboard stats
+    await revalidateLeaves();
+    await revalidateLeaveQuota();
+    await revalidateDashboard();
+
     return createdResponse(leave, "Leave request created successfully");
   } catch (error) {
-    console.error("Error creating leave:", error);
-    return errorResponse("Failed to create leave request", 500);
+    const { message } = apiErrorHandler("Creating leave request", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }

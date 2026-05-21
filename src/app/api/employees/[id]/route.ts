@@ -1,6 +1,15 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { successResponse, errorResponse, notFoundResponse, serverErrorResponse } from "@/lib/api-utils";
+import { auth } from "@/lib/auth";
+import { apiErrorHandler } from "@/lib/logger";
+import {
+  successResponse,
+  errorResponse,
+  notFoundResponse,
+  serverErrorResponse,
+  unauthorizedResponse,
+} from "@/lib/api-utils";
+import { revalidateAfterEmployeeChange } from "@/lib/revalidate";
 
 // GET /api/employees/[id] - Get single employee
 export async function GET(
@@ -8,6 +17,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const { id } = await params;
 
     const employee = await prisma.employee.findUnique({
@@ -27,6 +42,19 @@ export async function GET(
           take: 10,
           include: { leaveType: true },
         },
+        families: true,
+        educations: {
+          orderBy: { year: "desc" },
+        },
+        emergencyContacts: true,
+        documents: true,
+        assets: true,
+        workExperiences: {
+          orderBy: { startDate: "desc" },
+        },
+        trainings: {
+          orderBy: { year: "desc" },
+        },
       },
     });
 
@@ -36,8 +64,11 @@ export async function GET(
 
     return successResponse(employee);
   } catch (error) {
-    console.error("Error fetching employee:", error);
-    return serverErrorResponse();
+    const { message } = apiErrorHandler("Fetching employee details", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }
 
@@ -47,6 +78,12 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const { id } = await params;
     const body = await request.json();
 
@@ -97,6 +134,8 @@ export async function PUT(
       "profilePhoto",
       "isLocked",
       "lockedReason",
+      "birthDate",
+      "joinDate",
     ];
 
     fields.forEach((field) => {
@@ -119,10 +158,16 @@ export async function PUT(
       },
     });
 
+    // Invalidate caches for this employee and dashboard
+    await revalidateAfterEmployeeChange(id);
+
     return successResponse(employee, "Employee updated successfully");
   } catch (error) {
-    console.error("Error updating employee:", error);
-    return serverErrorResponse();
+    const { message } = apiErrorHandler("Updating employee", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }
 
@@ -132,6 +177,12 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const { id } = await params;
 
     const employee = await prisma.employee.findUnique({
@@ -155,9 +206,15 @@ export async function DELETE(
 
     await prisma.employee.delete({ where: { id } });
 
+    // Invalidate employee list and dashboard caches
+    await revalidateAfterEmployeeChange();
+
     return successResponse(null, "Employee deleted successfully");
   } catch (error) {
-    console.error("Error deleting employee:", error);
-    return serverErrorResponse();
+    const { message } = apiErrorHandler("Deleting employee", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }

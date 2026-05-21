@@ -1,6 +1,15 @@
-import { PrismaClient, Gender, EmployeeStatus } from "@prisma/client";
+import { PrismaClient, Gender, EmployeeStatus, UserRole } from "@prisma/client";
+import { hash } from "bcryptjs";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { Pool } from "pg";
 
-const prisma = new PrismaClient();
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  throw new Error("DATABASE_URL is not set");
+}
+const pool = new Pool({ connectionString });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
 
 async function main() {
   console.log("Seeding database...");
@@ -472,6 +481,42 @@ async function main() {
   }
 
   console.log(`Created ${workSchedules.length} work schedules`);
+
+  // ============ CREATE USERS ============
+  console.log("Creating users...");
+
+  // Create Admin User (linked to first employee - Joko Susilo)
+  const adminPassword = await hash("admin123", 12);
+  await prisma.user.upsert({
+    where: { email: "admin@bnifinance.co.id" },
+    update: {},
+    create: {
+      email: "admin@bnifinance.co.id",
+      password: adminPassword,
+      employeeId: employees[0].id,
+      role: UserRole.ADMIN,
+      isActive: true,
+    },
+  });
+  console.log("Created admin user: admin@bnifinance.co.id / admin123");
+
+  // Create Employee Users
+  const employeePassword = await hash("password123", 12);
+  for (let i = 1; i < employees.length; i++) {
+    const employee = employees[i];
+    await prisma.user.upsert({
+      where: { email: employee.email },
+      update: {},
+      create: {
+        email: employee.email,
+        password: employeePassword,
+        employeeId: employee.id,
+        role: UserRole.EMPLOYEE,
+        isActive: true,
+      },
+    });
+  }
+  console.log(`Created ${employees.length - 1} employee users`);
 
   console.log("Database seeding completed successfully!");
 }

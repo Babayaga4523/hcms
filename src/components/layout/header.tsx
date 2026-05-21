@@ -1,17 +1,15 @@
 "use client";
 
 import * as React from "react";
-import { Bell, ChevronDown, Calendar, User, Settings, LogOut, Search } from "lucide-react";
+import { signOut, useSession } from "next-auth/react";
+import Link from "next/link";
+import { Bell, ChevronDown, Calendar, User, Settings, LogOut, Search, Loader2 } from "lucide-react";
 import { cn, formatIndonesianDate } from "@/lib/utils";
 import { useSidebar } from "./sidebar";
+import { Skeleton } from "@/components/ui/skeleton";
 
-interface HeaderProps {
-  title?: string;
-  subtitle?: string;
-  actions?: React.ReactNode;
-}
-
-export function Header({ title, subtitle, actions }: HeaderProps) {
+export function Header({ title, subtitle, actions }: { title?: string; subtitle?: string; actions?: React.ReactNode }) {
+  const { data: session, status } = useSession();
   const { collapsed } = useSidebar();
   const [mounted, setMounted] = React.useState(false);
   const [showUserMenu, setShowUserMenu] = React.useState(false);
@@ -21,8 +19,35 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
     setMounted(true);
   }, []);
 
-  // Static date to avoid hydration mismatch
   const staticDate = "Kamis, 21-05-2026";
+
+  // Get user initials from session
+  const getInitials = (name: string) => {
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
+
+  // Role labels
+  const roleLabels: Record<string, string> = {
+    SUPER_ADMIN: "Super Admin",
+    ADMIN: "HR Admin",
+    MANAGER: "Manager",
+    EMPLOYEE: "Employee",
+  };
+
+  const handleSignOut = () => {
+    signOut({ callbackUrl: "/login" });
+  };
+
+  // Get user info from session or fallback
+  const userName = session?.user?.name || "User";
+  const userEmail = session?.user?.email || "";
+  const userRole = session?.user?.role ? roleLabels[session.user.role] : "Employee";
+  const userInitials = getInitials(userName);
 
   return (
     <header
@@ -34,18 +59,14 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
       {/* Left side - Title */}
       <div className="flex items-center gap-4">
         <div>
-          {title && (
-            <h1 className="text-base font-semibold text-[#1A1A2E]">{title}</h1>
-          )}
-          {subtitle && (
-            <p className="text-xs text-[#6B7280]">{subtitle}</p>
-          )}
+          {title && <h1 className="text-base font-semibold text-[#1A1A2E]">{title}</h1>}
+          {subtitle && <p className="text-xs text-[#6B7280]">{subtitle}</p>}
         </div>
       </div>
 
       {/* Right side */}
       <div className="flex items-center gap-3">
-        {/* Search (hidden on small screens) */}
+        {/* Search */}
         <div className="hidden xl:block">
           <div className="relative group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#9CA3AF] group-focus-within:text-[#1A2B6B]" />
@@ -80,40 +101,20 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
             </span>
           </button>
 
-          {/* Notifications Dropdown */}
           {showNotifications && (
             <>
-              <div
-                className="fixed inset-0 z-40"
-                onClick={() => setShowNotifications(false)}
-              />
+              <div className="fixed inset-0 z-40" onClick={() => setShowNotifications(false)} />
               <div className="absolute right-0 top-full mt-2 w-80 rounded-xl border border-[#E5E7EB] bg-white shadow-xl z-50 overflow-hidden">
                 <div className="px-4 py-3 border-b border-[#F3F4F6]">
                   <h3 className="text-sm font-semibold text-[#1A1A2E]">Notifications</h3>
                 </div>
                 <div className="max-h-80 overflow-y-auto">
-                  <NotificationItem
-                    title="New Leave Request"
-                    message="Budi Santoso submitted a leave request"
-                    time="5 min ago"
-                    unread
-                  />
-                  <NotificationItem
-                    title="Overtime Approved"
-                    message="Your overtime request for yesterday was approved"
-                    time="1 hour ago"
-                    unread
-                  />
-                  <NotificationItem
-                    title="Performance Review"
-                    message="Performance appraisal deadline is approaching"
-                    time="2 hours ago"
-                  />
+                  <NotificationItem title="New Leave Request" message="Budi Santoso submitted a leave request" time="5 min ago" unread />
+                  <NotificationItem title="Overtime Approved" message="Your overtime request for yesterday was approved" time="1 hour ago" unread />
+                  <NotificationItem title="Performance Review" message="Performance appraisal deadline is approaching" time="2 hours ago" />
                 </div>
                 <div className="px-4 py-2.5 border-t border-[#F3F4F6] bg-[#FAFAFA]">
-                  <button className="w-full text-center text-xs font-medium text-[#1A2B6B] hover:underline">
-                    View all notifications
-                  </button>
+                  <button className="w-full text-center text-xs font-medium text-[#1A2B6B] hover:underline">View all notifications</button>
                 </div>
               </div>
             </>
@@ -129,44 +130,56 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
             }}
             className="flex items-center gap-2 rounded-lg border border-[#E5E7EB] bg-white px-2 py-1.5 hover:bg-[#FAFAFA] transition-colors"
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#1A2B6B] to-[#2A3D8B] text-white text-xs font-semibold shadow-sm">
-              YA
-            </div>
+            {status === "loading" ? (
+              <Skeleton className="h-8 w-8 rounded-full" />
+            ) : (
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-[#1A2B6B] to-[#2A3D8B] text-white text-xs font-semibold shadow-sm">
+                {userInitials}
+              </div>
+            )}
             <div className="hidden flex-col items-start lg:flex">
-              <span className="text-xs font-semibold text-[#1A1A2E] leading-none mb-0.5">
-                Yoga Utama
-              </span>
-              <span className="text-[10px] text-[#6B7280] leading-none">
-                HR Admin
-              </span>
+              {status === "loading" ? (
+                <>
+                  <Skeleton className="h-3 w-16 mb-0.5" />
+                  <Skeleton className="h-2 w-12" />
+                </>
+              ) : (
+                <>
+                  <span className="text-xs font-semibold text-[#1A1A2E] leading-none mb-0.5">{userName}</span>
+                  <span className="text-[10px] text-[#6B7280] leading-none">{userRole}</span>
+                </>
+              )}
             </div>
             <ChevronDown className="hidden h-4 w-4 text-[#9CA3AF] lg:block" />
           </button>
 
-          {/* User Dropdown */}
           {showUserMenu && (
             <>
-              <div
-                className="fixed inset-0 z-40"
-                onClick={() => setShowUserMenu(false)}
-              />
+              <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
               <div className="absolute right-0 top-full mt-2 w-56 rounded-xl border border-[#E5E7EB] bg-white shadow-xl z-50 overflow-hidden">
                 <div className="px-4 py-3 border-b border-[#F3F4F6]">
-                  <p className="text-sm font-semibold text-[#1A1A2E]">Yoga Utama</p>
-                  <p className="text-xs text-[#6B7280]">yoga.utama@bnifinance.co.id</p>
+                  <p className="text-sm font-semibold text-[#1A1A2E]">{userName}</p>
+                  <p className="text-xs text-[#6B7280]">{userEmail}</p>
                 </div>
                 <div className="py-1">
-                  <button className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-[#374151] hover:bg-[#FAFAFA] transition-colors">
+                  <Link
+                    href="/(dashboard)/profile"
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-[#374151] hover:bg-[#FAFAFA] transition-colors"
+                    onClick={() => setShowUserMenu(false)}
+                  >
                     <User className="h-4 w-4 text-[#6B7280]" />
                     My Profile
-                  </button>
+                  </Link>
                   <button className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-[#374151] hover:bg-[#FAFAFA] transition-colors">
                     <Settings className="h-4 w-4 text-[#6B7280]" />
                     Settings
                   </button>
                 </div>
                 <div className="border-t border-[#F3F4F6] py-1">
-                  <button className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-[#EF4444] hover:bg-red-50 transition-colors">
+                  <button
+                    onClick={handleSignOut}
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-sm text-[#EF4444] hover:bg-red-50 transition-colors"
+                  >
                     <LogOut className="h-4 w-4" />
                     Sign Out
                   </button>
@@ -187,7 +200,6 @@ export function Header({ title, subtitle, actions }: HeaderProps) {
   );
 }
 
-// Notification Item Component
 function NotificationItem({
   title,
   message,
@@ -201,12 +213,7 @@ function NotificationItem({
 }) {
   return (
     <button className="flex w-full items-start gap-3 px-4 py-3 hover:bg-[#FAFAFA] transition-colors text-left">
-      <div
-        className={cn(
-          "mt-1 h-2 w-2 rounded-full flex-shrink-0",
-          unread ? "bg-[#1A2B6B]" : "bg-transparent"
-        )}
-      />
+      <div className={cn("mt-1 h-2 w-2 rounded-full flex-shrink-0", unread ? "bg-[#1A2B6B]" : "bg-transparent")} />
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-[#1A1A2E] truncate">{title}</p>
         <p className="text-xs text-[#6B7280] line-clamp-2 mt-0.5">{message}</p>
@@ -216,5 +223,4 @@ function NotificationItem({
   );
 }
 
-// Export default Header
 export default Header;

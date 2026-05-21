@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { apiErrorHandler } from "@/lib/logger";
 import {
   successResponse,
   createdResponse,
@@ -7,12 +9,20 @@ import {
   notFoundResponse,
   paginatedResponse,
   getPaginationParams,
+  unauthorizedResponse,
 } from "@/lib/api-utils";
 import { Prisma, ResignCategory, ResignStatus } from "@prisma/client";
+import { revalidateResigns, revalidateDashboard } from "@/lib/revalidate";
 
 // GET /api/resign - List resignation requests with pagination and filters
 export async function GET(request: NextRequest) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const { searchParams } = new URL(request.url);
     const { page, pageSize, skip } = getPaginationParams(searchParams);
 
@@ -68,14 +78,23 @@ export async function GET(request: NextRequest) {
 
     return paginatedResponse(resigns, page, pageSize, total);
   } catch (error) {
-    console.error("Error fetching resigns:", error);
-    return errorResponse("Failed to fetch resignation requests", 500);
+    const { message } = apiErrorHandler("Fetching resignation requests", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }
 
 // POST /api/resign - Create new resignation request
 export async function POST(request: NextRequest) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const body = await request.json();
 
     const { employeeId, resignDate, reason, category } = body;
@@ -136,9 +155,16 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Invalidate resign list and dashboard caches
+    await revalidateResigns();
+    await revalidateDashboard();
+
     return createdResponse(resign, "Resignation request created successfully");
   } catch (error) {
-    console.error("Error creating resign request:", error);
-    return errorResponse("Failed to create resignation request", 500);
+    const { message } = apiErrorHandler("Creating resignation request", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }

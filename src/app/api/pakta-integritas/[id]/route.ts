@@ -1,24 +1,27 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { apiErrorHandler } from "@/lib/logger";
 import {
   successResponse,
   notFoundResponse,
   errorResponse,
 } from "@/lib/api-utils";
 import { PaktaStatus, Prisma } from "@prisma/client";
-
-interface RouteParams {
-  params: Promise<{
-    id: string;
-  }>;
-}
+import { revalidatePaktaIntegritasRecord } from "@/lib/revalidate";
 
 // GET /api/pakta-integritas/[id] - Get a single pakta integritas assignment detail
 export async function GET(
   request: NextRequest,
-  { params }: RouteParams
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return errorResponse("Authentication required", 401);
+    }
+
     const { id } = await params;
 
     const pakta = await prisma.paktaIntegritas.findUnique({
@@ -43,17 +46,26 @@ export async function GET(
 
     return successResponse(pakta);
   } catch (error) {
-    console.error("Error fetching pakta-integritas detail:", error);
-    return errorResponse("Failed to fetch Pakta Integritas detail", 500);
+    const { message } = apiErrorHandler("Fetching Pakta Integritas detail", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }
 
 // PATCH /api/pakta-integritas/[id] - Sign pakta integritas or update status
 export async function PATCH(
   request: NextRequest,
-  { params }: RouteParams
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return errorResponse("Authentication required", 401);
+    }
+
     const { id } = await params;
     const body = await request.json();
 
@@ -113,9 +125,15 @@ export async function PATCH(
       },
     });
 
+    // Invalidate pakta integritas record cache
+    await revalidatePaktaIntegritasRecord(id);
+
     return successResponse(updatedPakta, "Pakta Integritas signed successfully.");
   } catch (error) {
-    console.error("Error signing pakta-integritas:", error);
-    return errorResponse("Failed to sign Pakta Integritas", 500);
+    const { message } = apiErrorHandler("Signing Pakta Integritas", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }

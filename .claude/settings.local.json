@@ -1,7 +1,17 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(mkdir -p \"c:\\\\Users\\\\yoga.utama\\\\Documents\\\\hcms-bni\\\\src\\\\app\\\\api\\\\auth\\\\[...nextauth]\")",
+      "Bash(npx tsc *)",
+      "Bash(cd \"c:\\\\Users\\\\yoga.omit\" && echo \"Starting TypeScript check\" && npx tsc --noEmit 2>&1 | head -20)",
+      "Read(//c/Users/**)",
+      "WebFetch(domain:minimax-algeng-chat-tts-us.oss-us-east-1.aliyuncs.com)",
+      "Bash(git remote *)",
+      "Bash(git add *)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\yoga.utama\\Documents\\hcms-bni\\src\\app\\api\\auth"
     ]
   }
 }

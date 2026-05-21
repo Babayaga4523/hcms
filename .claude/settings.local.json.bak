@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat ~/.claude/settings.json 2>/dev/null || echo \"File not found\")",
+      "Read(//c/Users/yoga.utama/.claude/**)"
+    ]
+  }
+}

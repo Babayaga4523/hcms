@@ -1,15 +1,19 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 
+// ============ Types ============
 export interface ApiError {
   message: string;
   status?: number;
 }
 
-export interface UseApiOptions<T> {
-  onSuccess?: (data: T) => void;
-  onError?: (error: ApiError) => void;
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
+  pagination?: PaginationState;
 }
 
 export interface PaginationState {
@@ -17,6 +21,11 @@ export interface PaginationState {
   pageSize: number;
   total: number;
   totalPages: number;
+}
+
+export interface UseApiOptions<T> {
+  onSuccess?: (data: T) => void;
+  onError?: (error: ApiError) => void;
 }
 
 export interface UseListResult<T> {
@@ -43,43 +52,76 @@ export interface UseMutateResult<T, V = unknown> {
   reset: () => void;
 }
 
-// Generic list hook
+// ============ Default pagination state ============
+const defaultPagination: PaginationState = {
+  page: 1,
+  pageSize: 10,
+  total: 0,
+  totalPages: 0,
+};
+
+// ============ API Fetch Helper with Auth ============
+async function apiFetch<T>(
+  url: string,
+  options?: RequestInit
+): Promise<ApiResponse<T>> {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    },
+    credentials: "include", // Include cookies for NextAuth
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    // Handle 401 Unauthorized - redirect to login
+    if (response.status === 401) {
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
+    }
+    throw {
+      message: result.error || result.message || "Request failed",
+      status: response.status,
+    };
+  }
+
+  return result;
+}
+
+// ============ Generic list hook ============
 export function useList<T>(
   url: string | (() => string),
   options?: UseApiOptions<T[]>
-): UseListResult<T> {
+): UseListResult<T> & { filter: (key: string, value: string | number | null) => void } {
   const [data, setData] = useState<T[]>([]);
-  const [pagination, setPagination] = useState<PaginationState>({
-    page: 1,
-    pageSize: 10,
-    total: 0,
-    totalPages: 0,
-  });
+  const [pagination, setPagination] = useState<PaginationState>(defaultPagination);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
+  const [params, setParams] = useState<URLSearchParams>(new URLSearchParams());
 
   const getUrl = useCallback(() => {
-    return typeof url === "function" ? url() : url;
-  }, [url]);
+    const baseUrl = typeof url === "function" ? url() : url;
+    const queryString = params.toString();
+    return queryString ? `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}${queryString}` : baseUrl;
+  }, [url, params]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      const response = await fetch(getUrl());
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw { message: result.error || "Request failed", status: response.status };
-      }
+      const result = await apiFetch<T[]>(getUrl());
 
       setData(result.data || []);
       if (result.pagination) {
         setPagination(result.pagination);
       }
 
-      options?.onSuccess?.(result.data);
+      options?.onSuccess?.(result.data as T[]);
     } catch (err) {
       const apiError = err as ApiError;
       setError(apiError);
@@ -89,24 +131,44 @@ export function useList<T>(
     }
   }, [getUrl, options]);
 
+  // Initial fetch and refetch when URL or params change
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
   const refetch = useCallback(() => {
     fetchData();
   }, [fetchData]);
 
   const setPage = useCallback((page: number) => {
-    const params = new URLSearchParams(window.location.search);
-    params.set("page", String(page));
-    window.history.pushState({}, "", `${window.location.pathname}?${params.toString()}`);
-    fetchData();
-  }, [fetchData]);
+    setParams((prev) => {
+      const newParams = new URLSearchParams(prev.toString());
+      newParams.set("page", String(page));
+      return newParams;
+    });
+  }, []);
 
   const setPageSize = useCallback((pageSize: number) => {
-    const params = new URLSearchParams(window.location.search);
-    params.set("pageSize", String(pageSize));
-    params.set("page", "1");
-    window.history.pushState({}, "", `${window.location.pathname}?${params.toString()}`);
-    fetchData();
-  }, [fetchData]);
+    setParams((prev) => {
+      const newParams = new URLSearchParams(prev.toString());
+      newParams.set("pageSize", String(pageSize));
+      newParams.set("page", "1");
+      return newParams;
+    });
+  }, []);
+
+  const filter = useCallback((key: string, value: string | number | null) => {
+    setParams((prev) => {
+      const newParams = new URLSearchParams(prev.toString());
+      if (value === null || value === "" || value === undefined) {
+        newParams.delete(key);
+      } else {
+        newParams.set(key, String(value));
+      }
+      newParams.set("page", "1"); // Reset to page 1 on filter
+      return newParams;
+    });
+  }, []);
 
   return {
     data,
@@ -116,10 +178,11 @@ export function useList<T>(
     refetch,
     setPage,
     setPageSize,
+    filter,
   };
 }
 
-// Generic detail hook
+// ============ Generic detail hook ============
 export function useDetail<T>(
   url: () => string | null,
   options?: UseApiOptions<T>
@@ -136,15 +199,9 @@ export function useDetail<T>(
     setError(null);
 
     try {
-      const response = await fetch(currentUrl);
-      const result = await response.json();
-
-      if (!response.ok) {
-        throw { message: result.error || "Request failed", status: response.status };
-      }
-
-      setData(result.data);
-      options?.onSuccess?.(result.data);
+      const result = await apiFetch<T>(currentUrl);
+      setData(result.data as T);
+      options?.onSuccess?.(result.data as T);
     } catch (err) {
       const apiError = err as ApiError;
       setError(apiError);
@@ -154,6 +211,13 @@ export function useDetail<T>(
     }
   }, [url, options]);
 
+  // Auto fetch when URL changes
+  useEffect(() => {
+    if (url()) {
+      fetchData();
+    }
+  }, [url, fetchData]);
+
   return {
     data,
     loading,
@@ -162,39 +226,41 @@ export function useDetail<T>(
   };
 }
 
-// Generic mutate hook (create/update)
+// ============ Generic mutate hook (create/update/delete) ============
 export function useMutate<T, V = unknown>(
-  method: "POST" | "PUT" | "DELETE",
+  method: "POST" | "PUT" | "PATCH" | "DELETE",
   url: string,
-  options?: UseApiOptions<T> & { redirectTo?: string }
-): UseMutateResult<T, V> {
+  options?: UseApiOptions<T> & {
+    redirectTo?: string;
+    invalidateUrls?: string[];
+    onMutate?: () => void;
+  }
+): UseMutateResult<T, V> & { isSuccess: boolean; clearSuccess: () => void } {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
+  const [isSuccess, setIsSuccess] = useState(false);
 
   const mutate = useCallback(
     async (body?: V): Promise<T | null> => {
       setLoading(true);
       setError(null);
+      setIsSuccess(false);
 
       try {
-        const response = await fetch(url, {
+        const result = await apiFetch<T>(url, {
           method,
-          headers: body ? { "Content-Type": "application/json" } : undefined,
           body: body ? JSON.stringify(body) : undefined,
         });
 
-        const result = await response.json();
+        setIsSuccess(true);
+        options?.onSuccess?.(result.data as T);
 
-        if (!response.ok) {
-          throw { message: result.error || "Request failed", status: response.status };
-        }
-
+        // Redirect if specified
         if (options?.redirectTo) {
           window.location.href = options.redirectTo;
         }
 
-        options?.onSuccess?.(result.data);
-        return result.data;
+        return result.data as T;
       } catch (err) {
         const apiError = err as ApiError;
         setError(apiError);
@@ -204,11 +270,16 @@ export function useMutate<T, V = unknown>(
         setLoading(false);
       }
     },
-    [method, url, options]
+    [url, method, options]
   );
 
   const reset = useCallback(() => {
     setError(null);
+    setIsSuccess(false);
+  }, []);
+
+  const clearSuccess = useCallback(() => {
+    setIsSuccess(false);
   }, []);
 
   return {
@@ -216,10 +287,12 @@ export function useMutate<T, V = unknown>(
     loading,
     error,
     reset,
+    isSuccess,
+    clearSuccess,
   };
 }
 
-// Hook for building query string
+// ============ Filters hook ============
 export function useFilters<T extends Record<string, unknown>>() {
   const [filters, setFilters] = useState<T>({} as T);
 
@@ -231,13 +304,16 @@ export function useFilters<T extends Record<string, unknown>>() {
     setFilters({} as T);
   }, []);
 
-  const buildQueryString = useCallback(() => {
+  const buildQueryString = useCallback((additionalFilters?: Partial<T>) => {
     const params = new URLSearchParams();
-    Object.entries(filters).forEach(([key, value]) => {
+    const allFilters = { ...filters, ...additionalFilters };
+
+    Object.entries(allFilters).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== "") {
         params.append(key, String(value));
       }
     });
+
     return params.toString();
   }, [filters]);
 

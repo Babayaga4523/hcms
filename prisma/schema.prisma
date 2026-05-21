@@ -86,6 +86,73 @@ enum ClearanceStatus {
   COMPLETED
 }
 
+// ============== USER & AUTH ==============
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  employeeId    String?   @unique
+  role          UserRole  @default(EMPLOYEE)
+  isActive      Boolean   @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  employee     Employee?  @relation(fields: [employeeId], references: [id])
+  accounts     Account[]
+  sessions     Session[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+enum UserRole {
+  SUPER_ADMIN   // Full system access
+  ADMIN        // HR Admin - full HC access
+  MANAGER      // Department manager - team access
+  EMPLOYEE     // Regular employee - self-service only
+}
+
 // ============== REFERENCE TABLES ==============
 
 model Department {
@@ -186,6 +253,15 @@ model Employee {
   paktaIntegritas       PaktaIntegritas[]
   resigns               Resign[]
   workPermissions       WorkPermission[]
+  families              EmployeeFamily[]
+  educations            EmployeeEducation[]
+  emergencyContacts     EmergencyContact[]
+  documents             EmployeeDocument[]
+  assets                EmployeeAsset[]
+  workExperiences       WorkExperience[]
+  trainings             EmployeeTraining[]
+
+  user                  User?
 
   @@map("employees")
 }
@@ -348,6 +424,7 @@ model PublicHoliday {
   description String?
   createdAt   DateTime @default(now())
 
+  @@unique([date, name])
   @@map("public_holidays")
 }
 
@@ -361,5 +438,109 @@ model WorkSchedule {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([name, dayOfWeek])
   @@map("work_schedules")
+}
+
+model EmployeeFamily {
+  id                 String   @id @default(cuid())
+  employeeId         String
+  name               String
+  relationship       String
+  phone              String?
+  occupation         String?
+  birthDate          DateTime? @db.Date
+  isEmergencyContact Boolean  @default(false)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("employee_families")
+}
+
+model EmployeeEducation {
+  id          String   @id @default(cuid())
+  employeeId  String
+  level       String
+  institution String
+  major       String?
+  year        Int?
+  grade       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("employee_educations")
+}
+
+model EmergencyContact {
+  id           String   @id @default(cuid())
+  employeeId   String
+  name         String
+  relationship String
+  phone        String
+  address      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("emergency_contacts")
+}
+
+model EmployeeDocument {
+  id         String   @id @default(cuid())
+  employeeId String
+  name       String
+  type       String
+  url        String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  @@map("employee_documents")
+}
+
+model EmployeeAsset {
+  id           String   @id @default(cuid())
+  employeeId   String
+  name         String
+  serialNumber String?
+  issueDate    DateTime? @db.Date
+  status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  @@map("employee_assets")
+}
+
+model WorkExperience {
+  id         String   @id @default(cuid())
+  employeeId String
+  company    String
+  position   String
+  startDate  DateTime? @db.Date
+  endDate    DateTime? @db.Date
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  @@map("work_experiences")
+}
+
+model EmployeeTraining {
+  id           String   @id @default(cuid())
+  employeeId   String
+  name         String
+  organizer    String?
+  year         Int?
+  certificate  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  @@map("employee_trainings")
 }

@@ -1,16 +1,26 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { apiErrorHandler } from "@/lib/logger";
 import {
   successResponse,
   createdResponse,
   errorResponse,
   paginatedResponse,
   getPaginationParams,
+  unauthorizedResponse,
 } from "@/lib/api-utils";
+import { revalidateReferenceData } from "@/lib/revalidate";
 
 // GET /api/leave-types - List leave types
 export async function GET(request: NextRequest) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const { searchParams } = new URL(request.url);
     const { page, pageSize, skip } = getPaginationParams(searchParams);
 
@@ -41,14 +51,23 @@ export async function GET(request: NextRequest) {
 
     return paginatedResponse(leaveTypes, page, pageSize, total);
   } catch (error) {
-    console.error("Error fetching leave types:", error);
-    return errorResponse("Failed to fetch leave types", 500);
+    const { message } = apiErrorHandler("Fetching leave types", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }
 
 // POST /api/leave-types - Create leave type
 export async function POST(request: NextRequest) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const body = await request.json();
 
     if (!body.code || !body.name) {
@@ -72,9 +91,15 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Invalidate reference data cache
+    await revalidateReferenceData();
+
     return createdResponse(leaveType, "Leave type created successfully");
   } catch (error) {
-    console.error("Error creating leave type:", error);
-    return errorResponse("Failed to create leave type", 500);
+    const { message } = apiErrorHandler("Creating leave type", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }

@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { apiErrorHandler } from "@/lib/logger";
 import {
   successResponse,
   createdResponse,
@@ -7,12 +9,20 @@ import {
   notFoundResponse,
   paginatedResponse,
   getPaginationParams,
+  unauthorizedResponse,
 } from "@/lib/api-utils";
 import { Prisma, PaktaStatus, EmployeeStatus } from "@prisma/client";
+import { revalidatePaktaIntegritas } from "@/lib/revalidate";
 
 // GET /api/pakta-integritas - List pakta integritas assignments with pagination and filters
 export async function GET(request: NextRequest) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const { searchParams } = new URL(request.url);
     const { page, pageSize, skip } = getPaginationParams(searchParams);
 
@@ -62,14 +72,23 @@ export async function GET(request: NextRequest) {
 
     return paginatedResponse(paktas, page, pageSize, total);
   } catch (error) {
-    console.error("Error fetching pakta-integritas:", error);
-    return errorResponse("Failed to fetch pakta-integritas assignments", 500);
+    const { message } = apiErrorHandler("Fetching Pakta Integritas", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }
 
 // POST /api/pakta-integritas - Assign pakta integritas (individual or bulk)
 export async function POST(request: NextRequest) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const body = await request.json();
 
     const { employeeId, isBulk, assignmentDate, dueDate, fileUrl } = body;
@@ -87,7 +106,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (isBulk) {
-      // 1. Bulk Assignment: Assign to all currently ACTIVE employees
+      // Bulk Assignment: Assign to all currently ACTIVE employees
       const activeEmployees = await prisma.employee.findMany({
         where: { status: "ACTIVE" as EmployeeStatus },
         select: { id: true },
@@ -112,12 +131,15 @@ export async function POST(request: NextRequest) {
         skipDuplicates: true,
       });
 
+      // Invalidate pakta integritas cache
+      await revalidatePaktaIntegritas();
+
       return createdResponse(
         { count: result.count },
-        `Successfully assigned Pakta Integritas to ${result.count} active employees in bulk.`
+        `Successfully assigned Pakta Integritas to ${result.count} active employees.`
       );
     } else {
-      // 2. Individual Assignment
+      // Individual Assignment
       if (!employeeId) {
         return errorResponse("employeeId is required for individual assignment", 400);
       }
@@ -150,10 +172,16 @@ export async function POST(request: NextRequest) {
         },
       });
 
+      // Invalidate pakta integritas cache
+      await revalidatePaktaIntegritas();
+
       return createdResponse(assignment, "Pakta Integritas assigned successfully.");
     }
   } catch (error) {
-    console.error("Error creating pakta-integritas assignment:", error);
-    return errorResponse("Failed to assign Pakta Integritas", 500);
+    const { message } = apiErrorHandler("Creating Pakta Integritas assignment", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }

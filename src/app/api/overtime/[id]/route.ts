@@ -1,24 +1,28 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { apiErrorHandler } from "@/lib/logger";
 import {
   successResponse,
   notFoundResponse,
   errorResponse,
+  unauthorizedResponse,
 } from "@/lib/api-utils";
 import { OvertimeStatus } from "@prisma/client";
-
-interface RouteParams {
-  params: Promise<{
-    id: string;
-  }>;
-}
+import { revalidateOvertime, revalidateDashboard } from "@/lib/revalidate";
 
 // GET /api/overtime/[id] - Get a single overtime request detail
 export async function GET(
   request: NextRequest,
-  { params }: RouteParams
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return errorResponse("Authentication required", 401);
+    }
+
     const { id } = await params;
 
     const overtime = await prisma.overtime.findUnique({
@@ -43,17 +47,26 @@ export async function GET(
 
     return successResponse(overtime);
   } catch (error) {
-    console.error("Error fetching overtime request:", error);
-    return errorResponse("Failed to fetch overtime request", 500);
+    const { message } = apiErrorHandler("Fetching overtime request", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }
 
 // PATCH /api/overtime/[id] - Update overtime request status (Approve/Reject)
 export async function PATCH(
   request: NextRequest,
-  { params }: RouteParams
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return errorResponse("Authentication required", 401);
+    }
+
     const { id } = await params;
     const body = await request.json();
 
@@ -95,9 +108,16 @@ export async function PATCH(
       },
     });
 
+    // Invalidate overtime and dashboard caches
+    await revalidateOvertime(id);
+    await revalidateDashboard();
+
     return successResponse(updatedOvertime, `Overtime request successfully updated to ${status}`);
   } catch (error) {
-    console.error("Error updating overtime request:", error);
-    return errorResponse("Failed to update overtime request", 500);
+    const { message } = apiErrorHandler("Updating overtime request", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }

@@ -1,24 +1,32 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { apiErrorHandler } from "@/lib/logger";
 import {
   successResponse,
   notFoundResponse,
   errorResponse,
+  unauthorizedResponse,
 } from "@/lib/api-utils";
 import { ResignStatus, ClearanceStatus, EmployeeStatus, Prisma } from "@prisma/client";
-
-interface RouteParams {
-  params: Promise<{
-    id: string;
-  }>;
-}
+import {
+  revalidateResign,
+  revalidateAfterEmployeeChange,
+  revalidateDashboard,
+} from "@/lib/revalidate";
 
 // GET /api/resign/[id] - Get a single resignation request detail
 export async function GET(
   request: NextRequest,
-  { params }: RouteParams
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return errorResponse("Authentication required", 401);
+    }
+
     const { id } = await params;
 
     const resign = await prisma.resign.findUnique({
@@ -43,17 +51,26 @@ export async function GET(
 
     return successResponse(resign);
   } catch (error) {
-    console.error("Error fetching resignation request:", error);
-    return errorResponse("Failed to fetch resignation request", 500);
+    const { message } = apiErrorHandler("Fetching resignation request", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }
 
 // PATCH /api/resign/[id] - Approve, reject, or complete resignation and clearance processes
 export async function PATCH(
   request: NextRequest,
-  { params }: RouteParams
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return errorResponse("Authentication required", 401);
+    }
+
     const { id } = await params;
     const body = await request.json();
 
@@ -100,7 +117,7 @@ export async function PATCH(
         dataToUpdate.approvedAt = new Date();
       }
 
-      // If clearance is completed, transition employee to RESIGNED and complete the resign workflow
+      // If clearance is completed, transition employee to RESIGNED
       if (clearanceStatus === "COMPLETED") {
         dataToUpdate.status = "COMPLETED" as ResignStatus;
 
@@ -130,13 +147,24 @@ export async function PATCH(
       });
     });
 
+    // Invalidate resign record cache and dashboard
+    await revalidateResign(id);
+    await revalidateDashboard();
+
+    // If clearance was completed, employee status changed — invalidate employee caches too
+    if (clearanceStatus === "COMPLETED") {
+      await revalidateAfterEmployeeChange(existingResign.employeeId);
+    }
+
     return successResponse(
       updatedResign,
       `Resignation request successfully updated. Employee state: ${updatedResign.employee.status}`
     );
   } catch (error) {
-    const err = error as Error;
-    console.error("Error patching resignation:", err);
-    return errorResponse(err.message || "Failed to update resignation request", 500);
+    const { message } = apiErrorHandler("Updating resignation", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }

@@ -1,5 +1,7 @@
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { auth } from "@/lib/auth";
+import { apiErrorHandler } from "@/lib/logger";
 import {
   successResponse,
   createdResponse,
@@ -7,11 +9,19 @@ import {
   notFoundResponse,
   paginatedResponse,
   getPaginationParams,
+  unauthorizedResponse,
 } from "@/lib/api-utils";
+import { revalidateReferenceData } from "@/lib/revalidate";
 
 // GET /api/divisions - List divisions
 export async function GET(request: NextRequest) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const { searchParams } = new URL(request.url);
     const { page, pageSize, skip } = getPaginationParams(searchParams);
 
@@ -51,14 +61,23 @@ export async function GET(request: NextRequest) {
 
     return paginatedResponse(divisions, page, pageSize, total);
   } catch (error) {
-    console.error("Error fetching divisions:", error);
-    return errorResponse("Failed to fetch divisions", 500);
+    const { message } = apiErrorHandler("Fetching divisions", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }
 
 // POST /api/divisions - Create division
 export async function POST(request: NextRequest) {
   try {
+    // Verify authentication
+    const session = await auth();
+    if (!session) {
+      return unauthorizedResponse("Authentication required");
+    }
+
     const body = await request.json();
 
     if (!body.code || !body.name || !body.departmentId) {
@@ -96,9 +115,15 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Invalidate reference data cache
+    await revalidateReferenceData();
+
     return createdResponse(division, "Division created successfully");
   } catch (error) {
-    console.error("Error creating division:", error);
-    return errorResponse("Failed to create division", 500);
+    const { message } = apiErrorHandler("Creating division", error, {
+      method: request.method,
+      path: request.url,
+    });
+    return errorResponse(message, 500);
   }
 }
